@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Your personal movie recommendation engine. Log, predict, and discover films tailored to your taste.">
+    <title>MRE — Personal Movie Engine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=3">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar / Navigation -->
+        <nav class="sidebar">
+            <div>
+                <h1 class="brand" style="text-align: center;">🎬 MRE<span class="brand-sub">My Recommendation Engine</span></h1>
+                <div class="domain-toggle-container" style="margin-top: 1rem; margin-bottom: 2rem; display: flex; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 4px;">
+                    <button id="domain-movie-btn" class="domain-btn active" style="flex: 1; padding: 0.5rem; background: transparent; border: none; color: #fff; cursor: pointer; border-radius: 6px; font-weight: 600; font-family: 'Outfit';">🎬 Movies</button>
+                    <button id="domain-anime-btn" class="domain-btn" style="flex: 1; padding: 0.5rem; background: transparent; border: none; color: rgba(255,255,255,0.5); cursor: pointer; border-radius: 6px; font-weight: 600; font-family: 'Outfit';">🌸 Anime</button>
+                </div>
+            </div>
+            <ul class="nav-links">
+                <li class="active" data-view="archive">📺 Archive</li>
+                <li data-view="watchlist">📋 Watchlist</li>
+                <li data-view="add">➕ Log Movie</li>
+                <li data-view="predict">🎯 Predict Score</li>
+                <li data-view="discover">🔮 Discover</li>
+                <li data-view="insights">📊 Insights</li>
+            </ul>
+            <div class="sidebar-footer">
+                All data stored locally.<br>No cloud. No tracking.
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+
+            <!-- View: Archive -->
+            <section id="view-archive" class="view-section active">
+                <header class="section-header">
+                    <h2>Your Archive</h2>
+                    <div class="controls">
+                        <input type="text" id="archive-search" placeholder="Search title or notes..." class="glass-input" style="width:220px;">
+                        <select id="archive-sort" class="glass-input">
+                            <option value="date_desc">Latest Watched</option>
+                            <option value="rating_desc">Highest Rated</option>
+                            <option value="title_asc">Title A–Z</option>
+                        </select>
+                    </div>
+                    <div class="archive-actions">
+                        <button id="export-btn" class="secondary-btn" style="font-size:0.85rem; padding:0.55rem 1rem;">⬇ Export</button>
+                        <label for="import-file-input" class="secondary-btn" style="font-size:0.85rem; padding:0.55rem 1rem; cursor:pointer;">⬆ Import</label>
+                        <input type="file" id="import-file-input" accept=".json" style="display:none;">
+                    </div>
+                </header>
+                <div id="archive-grid" class="movie-grid">
+                    <!-- Movie cards injected here -->
+                </div>
+            </section>
+
+            <!-- View: Watchlist -->
+            <section id="view-watchlist" class="view-section">
+                <header class="section-header">
+                    <h2>Your Watchlist</h2>
+                    <div class="archive-actions">
+                        <button id="export-watchlist-btn" class="secondary-btn" style="font-size:0.85rem; padding:0.55rem 1rem;">⬇ Export</button>
+                        <label for="import-watchlist-input" class="secondary-btn" style="font-size:0.85rem; padding:0.55rem 1rem; cursor:pointer;">⬆ Import</label>
+                        <input type="file" id="import-watchlist-input" accept=".json" style="display:none;">
+                    </div>
+                </header>
+                <div id="watchlist-grid" class="movie-grid">
+                    <!-- Watchlist cards injected here -->
+                </div>
+            </section>
+
+            <!-- View: Add Movie -->
+            <section id="view-add" class="view-section">
+                <header class="section-header">
+                    <h2>Log a Movie</h2>
+                </header>
+                <div class="glass-panel form-container">
+                    <div class="tmdb-search-box" style="position:relative;">
+                        <input type="text" id="tmdb-search-input" placeholder="Search for a movie on TMDB..." class="glass-input" autocomplete="off">
+                        <button id="tmdb-search-btn" class="primary-btn">Search</button>
+                        <div id="tmdb-autocomplete" class="autocomplete-dropdown hidden"></div>
+                    </div>
+                    <div style="margin-top: 1rem; margin-bottom: 2rem;">
+                        <button id="open-bulk-log-btn" class="secondary-btn" style="font-size: 0.85rem; padding: 0.5rem 1rem;">📝 Bulk Log from List</button>
+                    </div>
+                    <div id="tmdb-results" class="results-list"></div>
+
+                    <!-- Add form (hidden until movie selected) -->
+                    <form id="add-log-form" class="hidden slide-up">
+                        <div class="selected-movie-card">
+                            <h3 id="selected-title">Title</h3>
+                            <p id="selected-year">Year</p>
+                        </div>
+                        <input type="hidden" id="log-tmdb-id">
+
+                        <div class="form-group">
+                            <label>Your Rating (0–10)</label>
+                            <input type="number" id="log-rating" min="0" max="10" step="0.5" required class="glass-input" placeholder="e.g. 8.5">
+                        </div>
+                        <div class="form-group">
+                            <label>Watch Date</label>
+                            <input type="date" id="log-date" class="glass-input">
+                        </div>
+                        <div class="form-group checkbox-group">
+                            <input type="checkbox" id="log-rewatch">
+                            <label for="log-rewatch">This was a rewatch</label>
+                        </div>
+                        <div class="form-group">
+                            <label>Notes / Mood</label>
+                            <textarea id="log-notes" rows="3" placeholder="What were your thoughts?" class="glass-input"></textarea>
+                        </div>
+                        <button type="submit" class="primary-btn">Save to Archive</button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- View: Predict -->
+            <section id="view-predict" class="view-section">
+                <header class="section-header">
+                    <h2>Predict Score</h2>
+                </header>
+                <div class="glass-panel form-container">
+                    <p style="margin-bottom: 1.5rem; color: var(--text-secondary); font-size:0.95rem;">Search any movie to see how well it matches your personal taste profile.</p>
+                    <div class="tmdb-search-box" style="position:relative;">
+                        <input type="text" id="predict-search-input" placeholder="Search a movie to predict..." class="glass-input" autocomplete="off">
+                        <button id="predict-search-btn" class="primary-btn">Predict</button>
+                        <div id="predict-autocomplete" class="autocomplete-dropdown hidden"></div>
+                    </div>
+                    <div id="predict-results" class="results-list"></div>
+
+                    <!-- Prediction Card -->
+                    <div id="predict-score-card" class="hidden slide-up">
+                        <div class="prediction-header">
+                            <div class="score-circle">
+                                <span id="predict-score-val">0</span>%
+                            </div>
+                            <div class="prediction-info">
+                                <h3 id="predict-title">Movie Title</h3>
+                            </div>
+                        </div>
+                        <!-- Explanation + warning + nerd stats rendered below the header row -->
+                        <div id="predict-explanation" style="margin-top:1.2rem;"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- View: Discover -->
+            <section id="view-discover" class="view-section">
+                <header class="section-header">
+                    <h2>Discover Hidden Gems</h2>
+                </header>
+                <div class="glass-panel form-container">
+                    <p style="margin-bottom:1.5rem; color:var(--text-secondary); font-size:0.95rem;">Let the engine find movies tailored specifically to your taste profile.</p>
+                    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                        <div class="form-group" style="flex: 1; min-width: 200px;">
+                            <label>Genre</label>
+                            <select id="discover-genre" class="glass-input" style="width: 100%;">
+                                <option value="Action">🎬 Action</option>
+                                <option value="Comedy">😂 Comedy</option>
+                                <option value="Drama">🎭 Drama</option>
+                                <option value="Horror">👻 Horror</option>
+                                <option value="Science Fiction">🚀 Science Fiction</option>
+                                <option value="Thriller">🔪 Thriller</option>
+                                <option value="Romance">❤️ Romance</option>
+                                <option value="Documentary">🎥 Documentary</option>
+                                <option value="Adventure">🗺️ Adventure</option>
+                                <option value="Fantasy">🧙 Fantasy</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex: 1; min-width: 200px;">
+                            <label>Sort By (Filter)</label>
+                            <select id="discover-sort" class="glass-input" style="width: 100%;">
+                                <option value="random">🎲 Random (Deep Discovery)</option>
+                                <option value="popularity.desc">🔥 Most Popular</option>
+                                <option value="primary_release_date.desc">🆕 Latest Releases</option>
+                                <option value="vote_average.desc">⭐ Highest Rated</option>
+                                <option value="revenue.desc">💰 Highest Grossing</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <input type="checkbox" id="discover-hidden-gem" checked>
+                        <label for="discover-hidden-gem">💎 Hidden Gem Mode — boost underrated films that match your taste</label>
+                    </div>
+
+                    <button id="discover-btn" class="primary-btn">🔮 Discover 10 Movies</button>
+                </div>
+
+                <div id="discover-result" class="hidden slide-up" style="margin-top: 2rem;">
+                    <h3 style="margin-bottom: 1.5rem; color: var(--text-secondary); font-size:0.9rem; text-transform:uppercase; letter-spacing:0.08em;">Your Top Picks</h3>
+                    <div id="discover-list" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)); gap: 1.5rem; align-items: start;">
+                        <!-- Results injected here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- View: Insights -->
+            <section id="view-insights" class="view-section">
+                <header class="section-header">
+                    <h2>Taste Insights</h2>
+                </header>
+                <div id="insights-content">
+                    <p style="color: var(--text-secondary);">Click this tab to analyze your taste...</p>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Edit Modal -->
+    <div id="edit-modal" class="modal-container hidden">
+        <div class="modal-box">
+            <button id="close-edit-modal" class="close-btn" title="Close">✕</button>
+            <h2 style="margin-bottom: 0.3rem; font-size:1.4rem;">Edit Entry</h2>
+            <p id="edit-movie-title" style="color:var(--accent-color); font-weight:700; margin-bottom:1.8rem; font-size:1rem;"></p>
+
+            <form id="edit-log-form">
+                <input type="hidden" id="edit-tmdb-id">
+                <div class="form-group">
+                    <label>Your Rating (0–10)</label>
+                    <input type="number" id="edit-rating" class="glass-input" step="0.5" min="0" max="10" required placeholder="e.g. 8.5">
+                </div>
+                <div class="form-group">
+                    <label>Watch Date</label>
+                    <input type="date" id="edit-date" class="glass-input" required>
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="edit-rewatch">
+                    <label for="edit-rewatch">This was a rewatch</label>
+                </div>
+                <div class="form-group">
+                    <label>Notes / Review</label>
+                    <textarea id="edit-notes" class="glass-input" rows="4" placeholder="Your thoughts..."></textarea>
+                </div>
+                <div style="display:flex; gap:0.75rem; margin-top:0.5rem;">
+                    <button type="submit" class="primary-btn" style="flex:1;">Save Changes</button>
+                    <button type="button" id="cancel-edit-btn" class="secondary-btn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast notification -->
+    <div id="toast"></div>
+
+    <!-- Background Sync Indicator -->
+    <div id="sync-indicator" class="sync-badge hidden">
+        <span class="sync-spinner">🔄</span>
+        <span id="sync-text">Syncing metadata...</span>
+    </div>
+
+    <!-- Quick-Log Modal (for discovered movies) -->
+    <div id="quicklog-modal" class="modal-container hidden">
+        <div class="modal-box">
+            <button id="close-quicklog-modal" class="close-btn" title="Close">✕</button>
+            <h2 style="margin-bottom:0.3rem; font-size:1.4rem;">Add to Archive</h2>
+            <p id="quicklog-movie-title" style="color:var(--accent-color); font-weight:700; margin-bottom:1.8rem; font-size:1rem;"></p>
+            <form id="quicklog-form">
+                <input type="hidden" id="quicklog-tmdb-id">
+                <div class="form-group">
+                    <label>Your Rating (0–10)</label>
+                    <input type="number" id="quicklog-rating" class="glass-input" step="0.5" min="0" max="10" required placeholder="e.g. 8.0">
+                </div>
+                <div class="form-group">
+                    <label>Watch Date</label>
+                    <input type="date" id="quicklog-date" class="glass-input" required>
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="quicklog-rewatch">
+                    <label for="quicklog-rewatch">This was a rewatch</label>
+                </div>
+                <div class="form-group">
+                    <label>Notes / Review <span style="color:var(--text-secondary); font-weight:400;">(optional)</span></label>
+                    <textarea id="quicklog-notes" class="glass-input" rows="3" placeholder="Your thoughts..."></textarea>
+                </div>
+                <div style="display:flex; gap:0.75rem; margin-top:0.5rem;">
+                    <button type="submit" class="primary-btn" style="flex:1;">➕ Save to Archive</button>
+                    <button type="button" id="cancel-quicklog-btn" class="secondary-btn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Bulk Log Modal -->
+    <div id="bulk-log-modal" class="modal-container hidden">
+        <div class="modal-box" style="max-width: 700px; width: 90%;">
+            <button id="close-bulk-log-modal" class="close-btn" title="Close">✕</button>
+            <h2 style="margin-bottom:0.5rem; font-size:1.6rem;">Bulk Log Movies</h2>
+            
+            <div id="bulk-step-1">
+                <p style="color:var(--text-secondary); margin-bottom:1rem; font-size:0.95rem;">Paste a list of movie titles (one per line). The engine will find the closest matches on TMDB.</p>
+                <textarea id="bulk-list-input" class="glass-input" rows="10" placeholder="The Matrix\nInception\nSpiderman 2..."></textarea>
+                <div style="display:flex; justify-content:flex-end; margin-top:1rem;">
+                    <button id="bulk-fetch-btn" class="primary-btn">Fetch Matches</button>
+                </div>
+            </div>
+
+            <div id="bulk-step-2" class="hidden">
+                <p style="color:var(--text-secondary); margin-bottom:1rem; font-size:0.95rem;">Verify the matched movies and enter your rating (0-10).</p>
+                <div id="bulk-match-grid" style="max-height: 400px; overflow-y: auto; padding-right: 0.5rem;"></div>
+                <div style="display:flex; justify-content:space-between; margin-top:1.5rem;">
+                    <button id="bulk-back-btn" class="secondary-btn">Back</button>
+                    <button id="bulk-save-btn" class="primary-btn">Save All Ratings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+# Environment variables
+.env
+
+# Dependencies
+node_modules/
+
+# Database / user data
+data/mre.db
+data/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Large models
+models/
+*.gguf
