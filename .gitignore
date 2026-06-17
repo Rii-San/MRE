@@ -5,7 +5,7 @@
 node_modules/
 
 # Database / user data
-data/mre.db
+data/movie.db
 data/
 
 # OS generated files
