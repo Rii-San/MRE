@@ -10,7 +10,7 @@ const { getAnimeTasteProfile, getCrossPollinatedDenseProfile, cosineSimilarity, 
 // GET /api/anime_discover?genre=Action
 router.get('/', async (req, res) => {
     try {
-        let { genre, sort_by } = req.query;
+        let { genre, sort_by, country } = req.query;
 
         if (!genre) {
             return res.status(400).json({ error: 'Valid genre required' });
@@ -36,9 +36,9 @@ router.get('/', async (req, res) => {
         }
 
         const DISCOVER_QUERY = `
-        query ($page: Int, $genre: String, $sort: [MediaSort]) {
+        query ($page: Int, $genre: String, $sort: [MediaSort], $country: CountryCode) {
             Page(page: $page, perPage: 20) {
-                media(type: ANIME, genre: $genre, sort: $sort, averageScore_greater: 60) {
+                media(type: ANIME, genre: $genre, sort: $sort, countryOfOrigin: $country, averageScore_greater: 60) {
                     id
                     title { english romaji }
                     startDate { year }
@@ -66,7 +66,9 @@ router.get('/', async (req, res) => {
 
         for (let i = 0; i < 2; i++) {
             const page = isRandomSort ? (Math.floor(Math.random() * 10) + 1) : (i + 1);
-            const data = await fetchWithAniListRetry(DISCOVER_QUERY, { page, genre, sort: sortParam });
+            const variables = { page, genre, sort: sortParam };
+            if (country) variables.country = country;
+            const data = await fetchWithAniListRetry(DISCOVER_QUERY, variables);
             if (data?.data?.Page?.media) {
                 candidates.push(...data.data.Page.media);
             }

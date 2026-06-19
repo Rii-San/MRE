@@ -16,7 +16,7 @@ const GENRE_MAP = {
 // GET /api/discover?genre=Horror&hidden_gem=true
 router.get('/', async (req, res) => {
     try {
-        const { genre, hidden_gem, ai_prompt, sort_by } = req.query;
+        const { genre, hidden_gem, ai_prompt, sort_by, country } = req.query;
         let targetGenre = genre;
         let yearStart = null;
         let yearEnd = null;
@@ -41,6 +41,7 @@ router.get('/', async (req, res) => {
             if (!isRandomSort) url += `&sort_by=${sort_by}`;
             if (yearStart) url += `&primary_release_date.gte=${yearStart}-01-01`;
             if (yearEnd) url += `&primary_release_date.lte=${yearEnd}-12-31`;
+            if (country) url += `&with_origin_country=${country}`;
             
             const tmdbRes = await fetchWithRetry(url);
             const data = await tmdbRes.json();

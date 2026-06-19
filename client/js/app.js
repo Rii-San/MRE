@@ -77,28 +77,74 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnMovies = document.getElementById('domain-movie-btn');
     const btnAnime = document.getElementById('domain-anime-btn');
 
+    const MOVIE_GENRES = `
+        <option value="Action">🎬 Action</option>
+        <option value="Adventure">🗺️ Adventure</option>
+        <option value="Animation">🎨 Animation</option>
+        <option value="Comedy">😂 Comedy</option>
+        <option value="Crime">🕵️ Crime</option>
+        <option value="Documentary">🎥 Documentary</option>
+        <option value="Drama">🎭 Drama</option>
+        <option value="Family">👨‍👩‍👧‍👦 Family</option>
+        <option value="Fantasy">🧙 Fantasy</option>
+        <option value="History">🏛️ History</option>
+        <option value="Horror">👻 Horror</option>
+        <option value="Music">🎵 Music</option>
+        <option value="Mystery">🔍 Mystery</option>
+        <option value="Romance">❤️ Romance</option>
+        <option value="Science Fiction">🚀 Science Fiction</option>
+        <option value="TV Movie">📺 TV Movie</option>
+        <option value="Thriller">🔪 Thriller</option>
+        <option value="War">⚔️ War</option>
+        <option value="Western">🤠 Western</option>
+    `;
+
+    const ANIME_GENRES = `
+        <option value="Action">🎬 Action</option>
+        <option value="Adventure">🗺️ Adventure</option>
+        <option value="Comedy">😂 Comedy</option>
+        <option value="Drama">🎭 Drama</option>
+        <option value="Ecchi">🥵 Ecchi</option>
+        <option value="Fantasy">🧙 Fantasy</option>
+        <option value="Horror">👻 Horror</option>
+        <option value="Mahou Shoujo">✨ Mahou Shoujo</option>
+        <option value="Mecha">🤖 Mecha</option>
+        <option value="Music">🎵 Music</option>
+        <option value="Mystery">🔍 Mystery</option>
+        <option value="Psychological">🧠 Psychological</option>
+        <option value="Romance">❤️ Romance</option>
+        <option value="Sci-Fi">🚀 Sci-Fi</option>
+        <option value="Slice of Life">☕ Slice of Life</option>
+        <option value="Sports">🏀 Sports</option>
+        <option value="Supernatural">👻 Supernatural</option>
+        <option value="Thriller">🔪 Thriller</option>
+    `;
+
     function switchDomain(domain) {
         if (window.CURRENT_DOMAIN) saveDomainState(window.CURRENT_DOMAIN);
         
         window.CURRENT_DOMAIN = domain;
         const discoverBtn = document.getElementById('discover-btn');
+        const genreSelect = document.getElementById('discover-genre');
         if (domain === 'movies') {
+            if (genreSelect) genreSelect.innerHTML = MOVIE_GENRES;
             btnMovies.classList.add('active');
             btnMovies.style.color = '#fff';
             btnAnime.classList.remove('active');
             btnAnime.style.color = 'rgba(255,255,255,0.5)';
-            if (discoverBtn) discoverBtn.textContent = '🔮 Discover 5 Movies';
+            if (discoverBtn) discoverBtn.textContent = '🔮 Discover Movies';
             
             document.querySelector('[data-view="add"]').innerHTML = '➕ Log Movie';
             const logHeader = document.querySelector('#view-add h2');
             if (logHeader) logHeader.textContent = 'Log a Movie';
             if (tmdbSearchInput) tmdbSearchInput.placeholder = 'Search for a movie on TMDB...';
         } else {
+            if (genreSelect) genreSelect.innerHTML = ANIME_GENRES;
             btnAnime.classList.add('active');
             btnAnime.style.color = '#fff';
             btnMovies.classList.remove('active');
             btnMovies.style.color = 'rgba(255,255,255,0.5)';
-            if (discoverBtn) discoverBtn.textContent = '🔮 Discover 5 Anime';
+            if (discoverBtn) discoverBtn.textContent = '🔮 Discover Anime';
             
             document.querySelector('[data-view="add"]').innerHTML = '➕ Log Anime';
             const logHeader = document.querySelector('#view-add h2');
@@ -812,6 +858,7 @@ const discoverResult = document.getElementById('discover-result');
 
 discoverBtn.addEventListener('click', async () => {
     const genre = document.getElementById('discover-genre').value;
+    const country = document.getElementById('discover-country').value;
     const sortBy = document.getElementById('discover-sort').value;
     const hiddenGem = document.getElementById('discover-hidden-gem').checked;
     
@@ -819,7 +866,7 @@ discoverBtn.addEventListener('click', async () => {
     discoverResult.classList.add('hidden');
     
     try {
-        let url = apiUrl(`discover?genre=${genre}&hidden_gem=${hiddenGem}&sort_by=${sortBy}`);
+        let url = apiUrl(`discover?genre=${genre}&hidden_gem=${hiddenGem}&sort_by=${sortBy}&country=${country}`);
         const res = await fetch(url);
         const data = await res.json();
         
@@ -909,7 +956,7 @@ discoverBtn.addEventListener('click', async () => {
         console.error(err);
         alert(err.message);
     } finally {
-        discoverBtn.textContent = window.CURRENT_DOMAIN === 'anime' ? '🔮 Discover 5 Anime' : '🔮 Discover 5 Movies';
+        discoverBtn.textContent = window.CURRENT_DOMAIN === 'anime' ? '🔮 Discover Anime' : '🔮 Discover Movies';
     }
 });
 
