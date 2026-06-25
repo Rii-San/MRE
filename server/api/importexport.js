@@ -5,6 +5,7 @@ const animeDb = require('../db/anime_db');
 const wdb = require('../db/watchlistDb');
 const awdb = require('../db/anime_watchlistDb');
 const { fetchAndCacheMovie } = require('../tmdb');
+const { invalidateCache } = require('../engine/cache');
 
 // GET /api/export
 // Returns the full archive as a downloadable JSON file
@@ -57,6 +58,8 @@ router.post('/', async (req, res) => {
     let skipped = 0;
     const errors = [];
 
+    // Phase 1: Pre-fetch any uncached movies from TMDB (async, outside transaction)
+    const validEntries = [];
     for (const entry of entries) {
         try {
             if (!entry.tmdb_id || entry.user_rating === undefined || !entry.watch_date) {
@@ -64,10 +67,8 @@ router.post('/', async (req, res) => {
                 continue;
             }
 
-            // Upsert movie metadata
             const existing = db.prepare('SELECT tmdb_id FROM movies WHERE tmdb_id = ?').get(entry.tmdb_id);
             if (!existing) {
-                // Try to re-fetch from TMDB, or use what we have in the import
                 try {
                     await fetchAndCacheMovie(entry.tmdb_id);
                 } catch {
@@ -92,8 +93,16 @@ router.post('/', async (req, res) => {
                     );
                 }
             }
+            validEntries.push(entry);
+        } catch (err) {
+            errors.push(`Entry ${entry.title || entry.tmdb_id}: ${err.message}`);
+        }
+    }
 
-            // Check if this exact watch entry already exists (same tmdb_id + watch_date)
+    // Phase 2: Batch all watched-entry DB writes in a single transaction
+    const importTransaction = db.transaction(() => {
+        let count = 0;
+        for (const entry of validEntries) {
             const existingWatch = db.prepare(
                 'SELECT id FROM watched WHERE tmdb_id = ? AND watch_date = ?'
             ).get(entry.tmdb_id, entry.watch_date);
@@ -103,7 +112,6 @@ router.post('/', async (req, res) => {
                 continue;
             }
 
-            // Insert watched entry
             db.prepare(`
                 INSERT INTO watched (tmdb_id, user_rating, rating_diff, watch_date, rewatch, notes)
                 VALUES (?, ?, ?, ?, ?, ?)
@@ -115,12 +123,14 @@ router.post('/', async (req, res) => {
                 entry.rewatch ? 1 : 0,
                 entry.notes || null
             );
-
-            imported++;
-        } catch (err) {
-            errors.push(`Entry ${entry.title || entry.tmdb_id}: ${err.message}`);
+            count++;
         }
-    }
+        return count;
+    });
+
+    imported = importTransaction();
+    
+    if (imported > 0) invalidateCache('movie');
 
     res.json({
         success: true,

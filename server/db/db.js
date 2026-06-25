@@ -54,6 +54,15 @@ function initDb() {
     try {
         db.exec("ALTER TABLE movies ADD COLUMN poster_path TEXT;");
     } catch (e) { /* Column already exists */ }
+    try {
+        db.exec("ALTER TABLE movies ADD COLUMN collection_id INTEGER;");
+    } catch (e) { /* Column already exists */ }
+    try {
+        db.exec("ALTER TABLE movies ADD COLUMN collection_name TEXT;");
+    } catch (e) { /* Column already exists */ }
+    try {
+        db.exec("ALTER TABLE movies ADD COLUMN primary_genres TEXT;");
+    } catch (e) { /* Column already exists */ }
 
     // Create watched table (personal log)
     db.exec(`

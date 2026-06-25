@@ -1,5 +1,7 @@
 const db = require('./db/anime_db');
 const { getEmbedding } = require('./llm');
+const { selectPrimaryGenres, computeGenreIDF } = require('./engine/genre_utils');
+const { getCache, invalidateGenreIDF } = require('./engine/cache');
 
 const ANILIST_API_URL = 'https://graphql.anilist.co';
 
@@ -7,17 +9,17 @@ async function delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Global throttle to strictly enforce 1 req / 0.75s locally as well
-let lastRequestTime = 0;
+// Global Promise Queue to strictly enforce 1 req / 0.75s locally and prevent race conditions
+let aniListQueuePromise = Promise.resolve();
 
 async function fetchWithAniListRetry(query, variables, retries = 3) {
     for (let i = 0; i < retries; i++) {
-        const now = Date.now();
-        const timeSinceLast = now - lastRequestTime;
-        if (timeSinceLast < 750) {
-            await delay(750 - timeSinceLast);
-        }
-        lastRequestTime = Date.now();
+        // Wait in line for our turn
+        await aniListQueuePromise;
+        
+        // Lock the queue for the next requester
+        let releaseNext;
+        aniListQueuePromise = new Promise(resolve => { releaseNext = resolve; });
 
         try {
             const response = await fetch(ANILIST_API_URL, {
@@ -29,17 +31,22 @@ async function fetchWithAniListRetry(query, variables, retries = 3) {
                 body: JSON.stringify({ query, variables })
             });
 
+            // Release the lock for the next request after 750ms (enforcing 90/min)
+            setTimeout(releaseNext, 750);
+
             // Check rate limits from headers
             const remaining = parseInt(response.headers.get('x-ratelimit-remaining') || '90');
             if (remaining < 5) {
-                console.log(`[AniList] Approaching rate limit (${remaining} left). Pausing for 5 seconds...`);
-                await delay(5000);
+                console.log(`[AniList] Approaching rate limit (${remaining} left). Pausing globally for 5 seconds...`);
+                // Append a 5 second penalty to the global queue
+                aniListQueuePromise = aniListQueuePromise.then(() => delay(5000));
             }
 
             if (response.status === 429) {
                 const retryAfter = parseInt(response.headers.get('retry-after') || '60');
-                console.warn(`[AniList] 429 Rate Limited! Sleeping for ${retryAfter} seconds...`);
-                await delay(retryAfter * 1000);
+                console.warn(`[AniList] 429 Rate Limited! Sleeping globally for ${retryAfter} seconds...`);
+                // Append the rate limit penalty to the global queue
+                aniListQueuePromise = aniListQueuePromise.then(() => delay(retryAfter * 1000));
                 continue; // retry
             }
 
@@ -50,6 +57,9 @@ async function fetchWithAniListRetry(query, variables, retries = 3) {
 
             return await response.json();
         } catch (error) {
+            // Ensure the queue is released even if the fetch throws a network error
+            if (typeof releaseNext === 'function') releaseNext();
+            
             console.error(`[AniList] Fetch error: ${error.message}`);
             if (i === retries - 1) throw error;
             await delay(2000 * (i + 1));
@@ -78,6 +88,12 @@ query ($id: Int) {
     studios(isMain: true) {
       edges { node { name } }
     }
+    relations {
+      edges {
+        relationType
+        node { id }
+      }
+    }
   }
 }
 `;
@@ -96,7 +112,20 @@ async function fetchAndCacheAnime(anilist_id) {
     const release_year = media.startDate?.year || null;
     const episodes = media.episodes || null;
     const format = media.format || null;
-    const genres = JSON.stringify(media.genres || []);
+    
+    const genreNames = media.genres || [];
+    const genres = JSON.stringify(genreNames);
+    
+    // Compute primary genres
+    const animeCache = getCache('anime');
+    let genreIDF = animeCache.genreIDF;
+    if (!genreIDF) {
+        const allGenreRows = db.prepare('SELECT genres FROM anime WHERE genres IS NOT NULL').all();
+        const allGenreArrays = allGenreRows.map(r => { try { return JSON.parse(r.genres); } catch(e) { return []; } });
+        genreIDF = computeGenreIDF(allGenreArrays);
+        animeCache.genreIDF = genreIDF;
+    }
+    const primary_genres = JSON.stringify(selectPrimaryGenres(genreNames, genreIDF, 2));
     
     // Filter tags to meaningful ones (rank > 60%) to prevent noise
     const tags = JSON.stringify((media.tags || []).filter(t => t.rank >= 60).map(t => t.name));
@@ -121,6 +150,23 @@ async function fetchAndCacheAnime(anilist_id) {
     }
     const studios_str = JSON.stringify(studios);
 
+    // Extract Franchise Group ID
+    // We group by finding the lowest anilist_id in the relations chain
+    // (SEQUEL, PREQUEL, SIDE_STORY, PARENT, ALTERNATIVE)
+    let franchise_group_id = anilist_id;
+    if (media.relations && media.relations.edges) {
+        const validRelations = ['SEQUEL', 'PREQUEL', 'SIDE_STORY', 'PARENT', 'ALTERNATIVE'];
+        const relatedIds = media.relations.edges
+            .filter(e => validRelations.includes(e.relationType) && e.node && e.node.id)
+            .map(e => e.node.id);
+        
+        if (relatedIds.length > 0) {
+            // Include self, then take the minimum ID to act as the franchise identifier
+            relatedIds.push(anilist_id);
+            franchise_group_id = Math.min(...relatedIds);
+        }
+    }
+
     // Get Embeddings for Description
     let plot_embedding = null;
     if (description) {
@@ -132,13 +178,14 @@ async function fetchAndCacheAnime(anilist_id) {
 
     const stmt = db.prepare(`
         INSERT OR REPLACE INTO anime 
-        (anilist_id, title_english, title_romaji, release_year, episodes, format, genres, tags, average_score, popularity, description, cover_image, director, studios, adult, plot_embedding)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (anilist_id, title_english, title_romaji, release_year, episodes, format, genres, tags, average_score, popularity, description, cover_image, director, studios, adult, plot_embedding, franchise_group_id, primary_genres)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
-    stmt.run(anilist_id, title_english, title_romaji, release_year, episodes, format, genres, tags, average_score, popularity, description, cover_image, director, studios_str, adult, plot_embedding);
+    stmt.run(anilist_id, title_english, title_romaji, release_year, episodes, format, genres, tags, average_score, popularity, description, cover_image, director, studios_str, adult, plot_embedding, franchise_group_id, primary_genres);
+    invalidateGenreIDF('anime');
 
-    return { anilist_id, title_english, title_romaji, release_year, genres, average_score, description, cover_image };
+    return { anilist_id, title_english, title_romaji, release_year, genres, average_score, description, cover_image, franchise_group_id, primary_genres };
 }
 
 module.exports = { fetchWithAniListRetry, fetchAndCacheAnime };

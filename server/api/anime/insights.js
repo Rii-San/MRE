@@ -1,11 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db/anime_db');
+const { getCache } = require('../../engine/cache');
 
 router.get('/', (req, res) => {
     try {
+        const animeCache = getCache('anime');
+        if (animeCache.insightsResult) return res.json(animeCache.insightsResult);
         const rows = db.prepare(`
-            SELECT w.user_rating, a.average_score, a.genres, a.tags, a.release_year, a.director, a.studios 
+            SELECT w.user_rating, a.anilist_id, a.average_score, COALESCE(a.primary_genres, a.genres) as active_genres, a.tags, a.release_year, a.director, a.studios, a.franchise_group_id 
             FROM watched_anime w 
             JOIN anime a ON w.anilist_id = a.anilist_id
         `).all();
@@ -24,41 +27,55 @@ router.get('/', (req, res) => {
         let validYearCount = 0;
 
         rows.forEach(r => {
+            const franchiseKey = r.franchise_group_id ? `franchise_${r.franchise_group_id}` : `anime_${r.anilist_id}`;
+
             // Rating discrepancy (User rating vs AniList average (0-100 mapped to 0-10))
             const ani_rating_10 = (r.average_score || 0) / 10;
             const diff = r.user_rating - (ani_rating_10 || r.user_rating);
             totalDiscrepancy += diff;
 
-            if (r.genres) {
-                const gList = JSON.parse(r.genres);
+            if (r.active_genres) {
+                const gList = JSON.parse(r.active_genres);
                 gList.forEach(g => {
-                    if (!genreStats[g]) genreStats[g] = { count: 0, sumRating: 0 };
-                    genreStats[g].count++;
-                    genreStats[g].sumRating += r.user_rating;
+                    if (!genreStats[g]) genreStats[g] = { count: 0, sumRating: 0, seenFranchises: new Set() };
+                    if (!genreStats[g].seenFranchises.has(franchiseKey)) {
+                        genreStats[g].seenFranchises.add(franchiseKey);
+                        genreStats[g].count++;
+                        genreStats[g].sumRating += r.user_rating;
+                    }
                 });
             }
 
             if (r.tags) {
                 const tList = JSON.parse(r.tags);
                 tList.forEach(t => {
-                    if (!tagStats[t]) tagStats[t] = { count: 0, sumRating: 0 };
-                    tagStats[t].count++;
-                    tagStats[t].sumRating += r.user_rating;
+                    if (!tagStats[t]) tagStats[t] = { count: 0, sumRating: 0, seenFranchises: new Set() };
+                    if (!tagStats[t].seenFranchises.has(franchiseKey)) {
+                        tagStats[t].seenFranchises.add(franchiseKey);
+                        tagStats[t].count++;
+                        tagStats[t].sumRating += r.user_rating;
+                    }
                 });
             }
 
             if (r.director) {
-                if (!directorStats[r.director]) directorStats[r.director] = { count: 0, sumRating: 0 };
-                directorStats[r.director].count++;
-                directorStats[r.director].sumRating += r.user_rating;
+                if (!directorStats[r.director]) directorStats[r.director] = { count: 0, sumRating: 0, seenFranchises: new Set() };
+                if (!directorStats[r.director].seenFranchises.has(franchiseKey)) {
+                    directorStats[r.director].seenFranchises.add(franchiseKey);
+                    directorStats[r.director].count++;
+                    directorStats[r.director].sumRating += r.user_rating;
+                }
             }
 
             if (r.studios) {
                 const sList = JSON.parse(r.studios);
                 sList.forEach(s => {
-                    if (!studioStats[s]) studioStats[s] = { count: 0, sumRating: 0 };
-                    studioStats[s].count++;
-                    studioStats[s].sumRating += r.user_rating;
+                    if (!studioStats[s]) studioStats[s] = { count: 0, sumRating: 0, seenFranchises: new Set() };
+                    if (!studioStats[s].seenFranchises.has(franchiseKey)) {
+                        studioStats[s].seenFranchises.add(franchiseKey);
+                        studioStats[s].count++;
+                        studioStats[s].sumRating += r.user_rating;
+                    }
                 });
             }
 
@@ -99,14 +116,16 @@ router.get('/', (req, res) => {
             else eraFact = `You enjoy the golden age of shounen. Your average anime year is ${avgYear}.`;
         }
 
-        res.json({
+        const result = {
             total_logged: rows.length,
             top_genres: topGenres,
             top_directors: topDirectors,
-            top_actors: topStudios, // Hack to reuse UI: map top_studios to top_actors visually
+            top_actors: topStudios,
             crowd_relation: crowdRelation,
             era_fact: eraFact
-        });
+        };
+        animeCache.insightsResult = result;
+        res.json(result);
 
     } catch (error) {
         console.error('Anime Insights error:', error);

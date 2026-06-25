@@ -32,6 +32,14 @@ function initDb() {
         );
     `);
 
+    // Schema upgrades
+    try {
+        db.exec("ALTER TABLE anime ADD COLUMN franchise_group_id INTEGER;");
+    } catch (e) { /* Column already exists */ }
+    try {
+        db.exec("ALTER TABLE anime ADD COLUMN primary_genres TEXT;");
+    } catch (e) { /* Column already exists */ }
+
     db.exec(`
         CREATE TABLE IF NOT EXISTS watched_anime (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

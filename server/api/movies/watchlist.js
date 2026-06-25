@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const wdb = require('../../db/watchlistDb');
+const { invalidateWatchlist } = require('../../engine/cache');
 
 // GET /api/watchlist
 router.get('/', (req, res) => {
@@ -34,6 +35,7 @@ router.post('/', (req, res) => {
             VALUES (?, ?, ?, ?, ?)
         `).run(tmdb_id, title, release_year || null, poster_path || null, today);
 
+        invalidateWatchlist('movie');
         res.json({ success: true });
     } catch (error) {
         console.error('Error adding to watchlist:', error);
@@ -50,6 +52,7 @@ router.delete('/:tmdb_id', (req, res) => {
         if (info.changes === 0) {
             return res.status(404).json({ error: 'Movie not found in watchlist' });
         }
+        invalidateWatchlist('movie');
         res.json({ success: true });
     } catch (error) {
         console.error('Error removing from watchlist:', error);
@@ -118,6 +121,7 @@ router.post('/import', (req, res) => {
         }
     }
 
+    invalidateWatchlist('movie');
     res.json({
         success: true,
         imported,

@@ -1,12 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db/db');
+const { getCache } = require('../../engine/cache');
 
 // GET /api/insights
 router.get('/', (req, res) => {
     try {
+        const movieCache = getCache('movie');
+        if (movieCache.insightsResult) return res.json(movieCache.insightsResult);
         const rows = db.prepare(`
-            SELECT w.user_rating, m.tmdb_rating, m.genres, m.release_year, m.director, m.top_cast 
+            SELECT w.user_rating, m.tmdb_id, m.tmdb_rating, COALESCE(m.primary_genres, m.genres) as active_genres, m.release_year, m.director, m.top_cast, m.collection_id 
             FROM watched w 
             JOIN movies m ON w.tmdb_id = m.tmdb_id
         `).all();
@@ -24,34 +27,46 @@ router.get('/', (req, res) => {
         let validYearCount = 0;
 
         rows.forEach(r => {
+            // Identifier to prevent franchise domination
+            const franchiseKey = r.collection_id ? `collection_${r.collection_id}` : `movie_${r.tmdb_id}`;
+
             // Rating discrepancy (User - TMDB)
             const diff = r.user_rating - (r.tmdb_rating || r.user_rating);
             totalDiscrepancy += diff;
 
             // Genres
-            if (r.genres) {
-                const gList = JSON.parse(r.genres);
+            if (r.active_genres) {
+                const gList = JSON.parse(r.active_genres);
                 gList.forEach(g => {
-                    if (!genreStats[g]) genreStats[g] = { count: 0, sumRating: 0 };
-                    genreStats[g].count++;
-                    genreStats[g].sumRating += r.user_rating;
+                    if (!genreStats[g]) genreStats[g] = { count: 0, sumRating: 0, seenFranchises: new Set() };
+                    if (!genreStats[g].seenFranchises.has(franchiseKey)) {
+                        genreStats[g].seenFranchises.add(franchiseKey);
+                        genreStats[g].count++;
+                        genreStats[g].sumRating += r.user_rating;
+                    }
                 });
             }
 
             // Directors
             if (r.director) {
-                if (!directorStats[r.director]) directorStats[r.director] = { count: 0, sumRating: 0 };
-                directorStats[r.director].count++;
-                directorStats[r.director].sumRating += r.user_rating;
+                if (!directorStats[r.director]) directorStats[r.director] = { count: 0, sumRating: 0, seenFranchises: new Set() };
+                if (!directorStats[r.director].seenFranchises.has(franchiseKey)) {
+                    directorStats[r.director].seenFranchises.add(franchiseKey);
+                    directorStats[r.director].count++;
+                    directorStats[r.director].sumRating += r.user_rating;
+                }
             }
 
             // Actors
             if (r.top_cast) {
                 const aList = JSON.parse(r.top_cast);
                 aList.forEach(a => {
-                    if (!actorStats[a]) actorStats[a] = { count: 0, sumRating: 0 };
-                    actorStats[a].count++;
-                    actorStats[a].sumRating += r.user_rating;
+                    if (!actorStats[a]) actorStats[a] = { count: 0, sumRating: 0, seenFranchises: new Set() };
+                    if (!actorStats[a].seenFranchises.has(franchiseKey)) {
+                        actorStats[a].seenFranchises.add(franchiseKey);
+                        actorStats[a].count++;
+                        actorStats[a].sumRating += r.user_rating;
+                    }
                 });
             }
 
@@ -95,14 +110,16 @@ router.get('/', (req, res) => {
             else eraFact = `You enjoy the golden age of blockbusters. Your average movie year is ${avgYear}.`;
         }
 
-        res.json({
+        const result = {
             total_logged: rows.length,
             top_genres: topGenres,
             top_directors: topDirectors,
             top_actors: topActors,
             crowd_relation: crowdRelation,
             era_fact: eraFact
-        });
+        };
+        movieCache.insightsResult = result;
+        res.json(result);
 
     } catch (error) {
         console.error('Insights error:', error);

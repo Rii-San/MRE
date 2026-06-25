@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const wdb = require('../../db/anime_watchlistDb');
+const { invalidateWatchlist } = require('../../engine/cache');
 
 router.get('/', (req, res) => {
     try {
@@ -29,6 +30,7 @@ router.post('/', (req, res) => {
             VALUES (?, ?, ?, ?, ?, ?)
         `);
         stmt.run(anilist_id, title_english, title_romaji, release_year, cover_image, new Date().toISOString());
+        invalidateWatchlist('anime');
         res.json({ success: true });
     } catch (err) {
         console.error(err);
@@ -39,6 +41,7 @@ router.post('/', (req, res) => {
 router.delete('/:id', (req, res) => {
     try {
         wdb.prepare('DELETE FROM watchlist_anime WHERE anilist_id = ?').run(req.params.id);
+        invalidateWatchlist('anime');
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: 'Failed to remove from anime watchlist' });

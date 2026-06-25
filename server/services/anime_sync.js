@@ -11,18 +11,12 @@ let status = {
 let currentInterval = 2000;
 let noHitCount = 0;
 
-const failedIds = new Set();
+const syncAttempts = new Map();
 
 async function processNextAnime() {
     try {
-        let query = `SELECT * FROM anime WHERE plot_embedding IS NULL OR description IS NULL OR description = ''`;
+        let query = `SELECT * FROM anime WHERE plot_embedding IS NULL OR description IS NULL OR description = '' OR primary_genres IS NULL OR franchise_group_id IS NULL`;
         let params = [];
-        
-        if (failedIds.size > 0) {
-            let placeholders = Array.from(failedIds).map(() => '?').join(',');
-            query += ` AND anilist_id NOT IN (${placeholders})`;
-            params = Array.from(failedIds);
-        }
         
         const animeToSync = db.prepare(query).all(...params);
         status.remaining = animeToSync.length;
@@ -51,7 +45,7 @@ async function processNextAnime() {
         console.log(`[Anime Sync] Repairing data for: ${status.currentAnime}`);
         
         let description = a.description;
-        let needsFetch = !a.description || !a.genres || !a.tags;
+        let needsFetch = !a.description || !a.genres || !a.tags || !a.primary_genres || a.franchise_group_id === null;
 
         if (needsFetch) {
             try {
@@ -60,7 +54,6 @@ async function processNextAnime() {
                 description = fetched.description;
             } catch (e) {
                 console.log(`[Anime Sync] Failed to fetch AniList for ${status.currentAnime}`);
-                failedIds.add(a.anilist_id);
             }
         }
 
@@ -72,12 +65,31 @@ async function processNextAnime() {
                     db.prepare('UPDATE anime SET plot_embedding = ? WHERE anilist_id = ?').run(embedStr, a.anilist_id);
                 } else {
                     console.log(`[Anime Sync] Embedding model returned empty for ${status.currentAnime}`);
-                    failedIds.add(a.anilist_id);
                 }
             } catch (e) {
                 console.log(`[Anime Sync] Failed to get embedding for ${status.currentAnime}`);
-                failedIds.add(a.anilist_id);
             }
+        }
+
+        const updatedA = db.prepare('SELECT * FROM anime WHERE anilist_id = ?').get(a.anilist_id);
+        const stillMissing = !updatedA || (!updatedA.description || updatedA.description === '' || !updatedA.plot_embedding || !updatedA.primary_genres || updatedA.franchise_group_id === null);
+
+        if (stillMissing) {
+            let attempts = syncAttempts.get(a.anilist_id) || 0;
+            attempts++;
+            
+            if (attempts >= 3) {
+                console.log(`[Anime Sync] Deleting ${status.currentAnime} after 3 failed attempts to fetch details.`);
+                try {
+                    db.prepare('DELETE FROM watched_anime WHERE anilist_id = ?').run(a.anilist_id);
+                } catch(e) {}
+                db.prepare('DELETE FROM anime WHERE anilist_id = ?').run(a.anilist_id);
+                syncAttempts.delete(a.anilist_id);
+            } else {
+                syncAttempts.set(a.anilist_id, attempts);
+            }
+        } else {
+            syncAttempts.delete(a.anilist_id);
         }
 
     } catch (err) {

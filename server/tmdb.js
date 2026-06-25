@@ -1,5 +1,7 @@
 const db = require('./db/db');
 const { getEmbedding } = require('./llm');
+const { selectPrimaryGenres, computeGenreIDF } = require('./engine/genre_utils');
+const { getCache, invalidateGenreIDF } = require('./engine/cache');
 
 async function fetchWithRetry(url, retries = 5) {
     for (let i = 0; i < retries; i++) {
@@ -34,7 +36,8 @@ async function fetchAndCacheMovie(tmdb_id) {
     const country = movieData.production_countries && movieData.production_countries.length > 0 
         ? movieData.production_countries[0].name 
         : null;
-    const genres = JSON.stringify(movieData.genres?.map(g => g.name) || []);
+    const genreNames = movieData.genres?.map(g => g.name) || [];
+    const genres = JSON.stringify(genreNames);
     const keywords = JSON.stringify(movieData.keywords?.keywords?.map(k => k.name) || []);
     const tmdb_rating = movieData.vote_average || 0;
     const tmdb_votes = movieData.vote_count || 0;
@@ -48,6 +51,22 @@ async function fetchAndCacheMovie(tmdb_id) {
     const adult = movieData.adult ? 1 : 0;
     const poster_path = movieData.poster_path || null;
 
+    // Franchise/Collection tracking
+    const collection_id = movieData.belongs_to_collection?.id || null;
+    const collection_name = movieData.belongs_to_collection?.name || null;
+
+    // Compute primary genres (top 2 most descriptive using IDF × position)
+    // Build a quick IDF from all movies currently in the DB
+    const movieCache = getCache('movie');
+    let genreIDF = movieCache.genreIDF;
+    if (!genreIDF) {
+        const allGenreRows = db.prepare('SELECT genres FROM movies WHERE genres IS NOT NULL').all();
+        const allGenreArrays = allGenreRows.map(r => { try { return JSON.parse(r.genres); } catch(e) { return []; } });
+        genreIDF = computeGenreIDF(allGenreArrays);
+        movieCache.genreIDF = genreIDF;
+    }
+    const primary_genres = JSON.stringify(selectPrimaryGenres(genreNames, genreIDF, 2));
+
     // Fetch dense semantic embedding from LM Studio
     let plot_embedding = null;
     if (overview) {
@@ -59,13 +78,14 @@ async function fetchAndCacheMovie(tmdb_id) {
 
     // Insert into DB
     const stmt = db.prepare(`
-        INSERT OR REPLACE INTO movies (tmdb_id, title, release_year, runtime, country, genres, keywords, tmdb_rating, tmdb_votes, overview, plot_embedding, director, top_cast, production_companies, original_language, adult, poster_path)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO movies (tmdb_id, title, release_year, runtime, country, genres, keywords, tmdb_rating, tmdb_votes, overview, plot_embedding, director, top_cast, production_companies, original_language, adult, poster_path, collection_id, collection_name, primary_genres)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     
-    stmt.run(tmdb_id, title, release_year, runtime, country, genres, keywords, tmdb_rating, tmdb_votes, overview, plot_embedding, director, top_cast, production_companies, original_language, adult, poster_path);
+    stmt.run(tmdb_id, title, release_year, runtime, country, genres, keywords, tmdb_rating, tmdb_votes, overview, plot_embedding, director, top_cast, production_companies, original_language, adult, poster_path, collection_id, collection_name, primary_genres);
+    invalidateGenreIDF('movie');
     
-    return { tmdb_rating, title, release_year, runtime, country, genres, keywords, tmdb_votes, overview, plot_embedding, director, top_cast, production_companies, original_language, adult };
+    return { tmdb_rating, title, release_year, runtime, country, genres, keywords, tmdb_votes, overview, plot_embedding, director, top_cast, production_companies, original_language, adult, collection_id, collection_name, primary_genres };
 }
 
 module.exports = { fetchWithRetry, fetchAndCacheMovie };

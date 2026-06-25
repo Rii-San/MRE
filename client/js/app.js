@@ -1,3 +1,75 @@
+// ── UI State Persistence ─────────────────────────────────────────
+const UI_STATE_KEY = 'mre_ui_state';
+
+function loadUIState() {
+    try {
+        const raw = localStorage.getItem(UI_STATE_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+    } catch (e) {
+        console.warn('Failed to load UI state, using defaults', e);
+        return null;
+    }
+}
+
+function saveUIState() {
+    try {
+        const state = {
+            domain: window.CURRENT_DOMAIN || 'movies',
+            activeView: document.querySelector('.nav-links li.active')?.dataset?.view || 'archive',
+            archiveSort: document.getElementById('archive-sort')?.value || 'date_desc',
+            discoverGenreMovies: null,
+            discoverGenreAnime: null,
+            discoverCountry: document.getElementById('discover-country')?.value || '',
+            discoverSort: document.getElementById('discover-sort')?.value || 'random',
+            discoverHiddenGem: document.getElementById('discover-hidden-gem')?.checked ?? true,
+            discoverDepth: parseInt(document.getElementById('discover-depth')?.value) || 0
+        };
+        // Save genre per-domain so switching domains remembers each separately
+        const currentGenre = document.getElementById('discover-genre')?.value || 'Action';
+        if (window.CURRENT_DOMAIN === 'anime') {
+            state.discoverGenreAnime = currentGenre;
+            // Preserve the other domain's saved genre
+            const prev = loadUIState();
+            if (prev) state.discoverGenreMovies = prev.discoverGenreMovies;
+        } else {
+            state.discoverGenreMovies = currentGenre;
+            const prev = loadUIState();
+            if (prev) state.discoverGenreAnime = prev.discoverGenreAnime;
+        }
+        localStorage.setItem(UI_STATE_KEY, JSON.stringify(state));
+    } catch (e) {
+        console.warn('Failed to save UI state', e);
+    }
+}
+
+// ── Depth Slider Helpers ─────────────────────────────────────────
+function updateDepthSliderVisibility() {
+    const sortVal = document.getElementById('discover-sort')?.value;
+    const container = document.getElementById('depth-slider-container');
+    if (!container) return;
+    if (sortVal === 'random') {
+        container.classList.remove('visible');
+    } else {
+        container.classList.add('visible');
+    }
+}
+
+function updateDepthHint(depthVal, totalPages) {
+    const hint = document.getElementById('depth-slider-hint');
+    if (!hint) return;
+    const val = parseInt(depthVal);
+    if (val === 0) {
+        hint.textContent = 'Starting from the top results';
+    } else if (totalPages && totalPages > 0) {
+        const startRank = Math.floor((val / 100) * totalPages * 20) + 1;
+        const endRank = startRank + 200 - 1;
+        hint.textContent = `~ranks ${startRank.toLocaleString()}–${endRank.toLocaleString()} of ${(totalPages * 20).toLocaleString()}`;
+    } else {
+        hint.textContent = `Skipping the top ${val}% of results`;
+    }
+}
+
 let archiveData = [];
 
 // DOM Elements
@@ -120,7 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <option value="Thriller">🔪 Thriller</option>
     `;
 
-    function switchDomain(domain) {
+    function switchDomain(domain, skipRefresh) {
         if (window.CURRENT_DOMAIN) saveDomainState(window.CURRENT_DOMAIN);
         
         window.CURRENT_DOMAIN = domain;
@@ -152,16 +224,87 @@ document.addEventListener('DOMContentLoaded', () => {
             if (tmdbSearchInput) tmdbSearchInput.placeholder = 'Search for an anime on AniList...';
         }
         
+        // Restore per-domain genre from saved state
+        const saved = loadUIState();
+        if (saved && genreSelect) {
+            const savedGenre = domain === 'anime' ? saved.discoverGenreAnime : saved.discoverGenreMovies;
+            if (savedGenre) genreSelect.value = savedGenre;
+        }
+        
         restoreDomainState(domain);
+        updateDepthSliderVisibility();
+        saveUIState();
         
         // Refresh active view
-        document.querySelector('.nav-links li.active').click();
+        if (!skipRefresh) document.querySelector('.nav-links li.active').click();
     }
 
     btnMovies.addEventListener('click', () => switchDomain('movies'));
     btnAnime.addEventListener('click', () => switchDomain('anime'));
 
-    fetchArchive();
+    // ── Restore Saved UI State ─────────────────────────────────
+    const savedState = loadUIState();
+    const initialDomain = savedState?.domain || 'movies';
+    
+    // Set domain first (with skipRefresh=true so we can set everything before navigating)
+    switchDomain(initialDomain, true);
+    
+    // Restore discover settings
+    if (savedState) {
+        const sortEl = document.getElementById('discover-sort');
+        const countryEl = document.getElementById('discover-country');
+        const gemEl = document.getElementById('discover-hidden-gem');
+        const depthEl = document.getElementById('discover-depth');
+        const archiveSortEl = document.getElementById('archive-sort');
+        
+        if (sortEl && savedState.discoverSort) sortEl.value = savedState.discoverSort;
+        if (countryEl && savedState.discoverCountry !== undefined) countryEl.value = savedState.discoverCountry;
+        if (gemEl && savedState.discoverHiddenGem !== undefined) gemEl.checked = savedState.discoverHiddenGem;
+        if (depthEl && savedState.discoverDepth !== undefined) depthEl.value = savedState.discoverDepth;
+        if (archiveSortEl && savedState.archiveSort) archiveSortEl.value = savedState.archiveSort;
+        
+        updateDepthSliderVisibility();
+        updateDepthHint(depthEl?.value || 0);
+    }
+    
+    // Navigate to saved view
+    const targetView = savedState?.activeView || 'archive';
+    const targetNav = document.querySelector(`.nav-links li[data-view="${targetView}"]`);
+    if (targetNav) {
+        targetNav.click();
+    } else {
+        fetchArchive();
+    }
+
+    // ── Slider Event Listeners ─────────────────────────────────
+    const depthSlider = document.getElementById('discover-depth');
+    if (depthSlider) {
+        depthSlider.addEventListener('input', () => {
+            updateDepthHint(depthSlider.value);
+            saveUIState();
+        });
+    }
+    
+    // ── Save Triggers on All Discover Controls ─────────────────
+    const discoverSortEl = document.getElementById('discover-sort');
+    if (discoverSortEl) {
+        discoverSortEl.addEventListener('change', () => {
+            updateDepthSliderVisibility();
+            saveUIState();
+        });
+    }
+    
+    const discoverGenreEl = document.getElementById('discover-genre');
+    if (discoverGenreEl) discoverGenreEl.addEventListener('change', () => saveUIState());
+    
+    const discoverCountryEl = document.getElementById('discover-country');
+    if (discoverCountryEl) discoverCountryEl.addEventListener('change', () => saveUIState());
+    
+    const discoverGemEl = document.getElementById('discover-hidden-gem');
+    if (discoverGemEl) discoverGemEl.addEventListener('change', () => saveUIState());
+    
+    const archiveSortEl = document.getElementById('archive-sort');
+    if (archiveSortEl) archiveSortEl.addEventListener('change', () => saveUIState());
 
     // ── Background Sync Poller ─────────────────────────────────
     async function pollSyncStatus() {
@@ -333,6 +476,7 @@ navLinks.forEach(link => {
                 p.innerHTML = 'Search any movie to see how well it matches your personal taste profile.';
             }
         }
+        saveUIState();
     });
 });
 
@@ -861,16 +1005,23 @@ discoverBtn.addEventListener('click', async () => {
     const country = document.getElementById('discover-country').value;
     const sortBy = document.getElementById('discover-sort').value;
     const hiddenGem = document.getElementById('discover-hidden-gem').checked;
+    const depth = parseInt(document.getElementById('discover-depth').value) || 0;
     
+    saveUIState();
     discoverBtn.textContent = 'Discovering...';
     discoverResult.classList.add('hidden');
     
     try {
-        let url = apiUrl(`discover?genre=${genre}&hidden_gem=${hiddenGem}&sort_by=${sortBy}&country=${country}`);
+        let url = apiUrl(`discover?genre=${genre}&hidden_gem=${hiddenGem}&sort_by=${sortBy}&country=${country}&depth=${depth}`);
         const res = await fetch(url);
         const data = await res.json();
         
         if (!res.ok) throw new Error(data.error || 'Failed to discover');
+        
+        // Update depth hint with actual totalPages from API response
+        if (data.totalPages) {
+            updateDepthHint(depth, data.totalPages);
+        }
         
         const listEl = document.getElementById('discover-list');
         listEl.innerHTML = data.movies.map((m, idx) => {

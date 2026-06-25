@@ -6,11 +6,13 @@ const movieDb = require('../../db/db');
 const { fetchWithAniListRetry } = require('../../anilist');
 const { buildAnimeVocab, normalizeL2, vectorizeAnime, getAnimeFeatureNames } = require('../../engine/vectorize_anime');
 const { getAnimeTasteProfile, getCrossPollinatedDenseProfile, cosineSimilarity, explainMatchDetailed } = require('../../engine/score');
+const { getCache } = require('../../engine/cache');
 
 // GET /api/anime_discover?genre=Action
 router.get('/', async (req, res) => {
     try {
-        let { genre, sort_by, country } = req.query;
+        let { genre, sort_by, country, hidden_gem, depth } = req.query;
+        const depthPct = Math.max(0, Math.min(100, parseInt(depth) || 0));
 
         if (!genre) {
             return res.status(400).json({ error: 'Valid genre required' });
@@ -61,27 +63,89 @@ router.get('/', async (req, res) => {
             }
         }`;
 
-        const candidates = [];
-        const sortParam = [anilistSort];
+        let totalPages = 10; // Default fallback
+        try {
+            const PAGE_INFO_QUERY = `
+            query ($genre: String, $sort: [MediaSort], $country: CountryCode) {
+                Page(page: 1, perPage: 20) {
+                    pageInfo { lastPage }
+                    media(type: ANIME, genre: $genre, sort: $sort, countryOfOrigin: $country, averageScore_greater: 60) {
+                        id
+                    }
+                }
+            }`;
+            const initVariables = { genre, sort: [anilistSort] };
+            if (country) initVariables.country = country;
+            
+            const initData = await fetchWithAniListRetry(PAGE_INFO_QUERY, initVariables);
+            if (initData?.data?.Page?.pageInfo?.lastPage) {
+                totalPages = initData.data.Page.pageInfo.lastPage;
+            }
+        } catch (e) {
+            console.error("Failed to fetch lastPage for anime discover", e);
+        }
 
-        for (let i = 0; i < 2; i++) {
-            const page = isRandomSort ? (Math.floor(Math.random() * 10) + 1) : (i + 1);
-            const variables = { page, genre, sort: sortParam };
+        const animeCache = getCache('anime');
+        let watchedIds = animeCache.watchedIds;
+        if (!watchedIds) {
+            watchedIds = new Set(db.prepare('SELECT anilist_id FROM watched_anime').all().map(r => r.anilist_id));
+            animeCache.watchedIds = watchedIds;
+        }
+        let watchlistIds = animeCache.watchlistIds;
+        if (!watchlistIds) {
+            watchlistIds = new Set(wdb.prepare('SELECT anilist_id FROM watchlist_anime').all().map(r => r.anilist_id));
+            animeCache.watchlistIds = watchlistIds;
+        }
+
+        const targetCandidateCount = 40;
+        const maxApiFetches = 10;
+        const candidates = [];
+        let apiFetches = 0;
+        
+        let currentPage = 1;
+        if (!isRandomSort && depthPct > 0) {
+            currentPage = Math.floor((depthPct / 100) * totalPages) + 1;
+            currentPage = Math.min(currentPage, totalPages);
+        }
+        const initialStartPage = currentPage;
+        const seenPages = new Set();
+
+        while (candidates.length < targetCandidateCount && apiFetches < maxApiFetches) {
+            let page;
+            if (isRandomSort) {
+                page = Math.floor(Math.random() * totalPages) + 1;
+                if (seenPages.has(page)) {
+                    if (seenPages.size >= totalPages) break;
+                    continue;
+                }
+            } else {
+                page = currentPage;
+            }
+            seenPages.add(page);
+            apiFetches++;
+
+            const variables = { page, genre, sort: [anilistSort] };
             if (country) variables.country = country;
             const data = await fetchWithAniListRetry(DISCOVER_QUERY, variables);
+            
             if (data?.data?.Page?.media) {
-                candidates.push(...data.data.Page.media);
+                const unseen = data.data.Page.media.filter(m => !watchedIds.has(m.id) && !watchlistIds.has(m.id));
+                candidates.push(...unseen);
+            }
+
+            if (!isRandomSort) {
+                currentPage++;
+                if (currentPage > totalPages) break;
+            } else {
+                if (seenPages.size >= totalPages) break;
             }
         }
 
-        const watchedIds = new Set(db.prepare('SELECT anilist_id FROM watched_anime').all().map(r => r.anilist_id));
-        const watchlistIds = new Set(wdb.prepare('SELECT anilist_id FROM watchlist_anime').all().map(r => r.anilist_id));
-
-        const filteredCandidates = candidates.filter(m => !watchedIds.has(m.id) && !watchlistIds.has(m.id));
-
-        if (filteredCandidates.length === 0) {
+        if (candidates.length === 0) {
             return res.status(404).json({ error: 'No candidates found' });
         }
+
+        const filteredCandidates = candidates;
 
         // Build Engine
         const vocab = buildAnimeVocab(db);
@@ -166,7 +230,11 @@ router.get('/', async (req, res) => {
             // Adjust weight by AniList popularity (log scale) to avoid pushing literal trash
             let popPenalty = Math.log10(anime.popularity || 10) / 5; 
             popPenalty = Math.min(1.0, Math.max(0.7, popPenalty));
-            const weight = finalSimilarity * popPenalty;
+            let weight = finalSimilarity * popPenalty;
+            if (hidden_gem === 'true') {
+                const score = anime.averageScore || 50;
+                if (score < 65) weight *= 1.5;
+            }
 
             // Generate explanations right away to mimic movies discover
             const features = explainMatchDetailed(movieVec, profileVec, featureNames).slice(0, 5);
@@ -231,7 +299,7 @@ router.get('/', async (req, res) => {
             m.explanation = `Matches your taste for ${pos}.`;
         });
 
-        res.json({ movies: selectedMovies });
+        res.json({ movies: selectedMovies, totalPages, startPage: initialStartPage });
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Failed to discover anime' });

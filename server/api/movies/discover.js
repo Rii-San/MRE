@@ -4,6 +4,7 @@ const db = require('../../db/db');
 const { fetchWithRetry } = require('../../tmdb');
 const { buildVocab, normalizeL2, vectorizeMovie, getFeatureNames } = require('../../engine/vectorize');
 const { getTasteProfile, cosineSimilarity, explainMatchDetailed } = require('../../engine/score');
+const { getCache } = require('../../engine/cache');
 
 // TMDB Genre Map
 const GENRE_MAP = {
@@ -16,12 +17,13 @@ const GENRE_MAP = {
 // GET /api/discover?genre=Horror&hidden_gem=true
 router.get('/', async (req, res) => {
     try {
-        const { genre, hidden_gem, ai_prompt, sort_by, country } = req.query;
+        const { genre, hidden_gem, ai_prompt, sort_by, country, depth } = req.query;
         let targetGenre = genre;
         let yearStart = null;
         let yearEnd = null;
+        const depthPct = Math.max(0, Math.min(100, parseInt(depth) || 0));
 
-
+        const isRandomSort = !sort_by || sort_by === 'random';
 
         if (!targetGenre || !GENRE_MAP[targetGenre]) {
             return res.status(400).json({ error: 'Valid genre required or could not be parsed from prompt' });
@@ -31,13 +33,64 @@ router.get('/', async (req, res) => {
         const genreId = GENRE_MAP[targetGenre];
         
         // Fetch 2 pages to get a pool of 40 candidates
-        const candidates = [];
-        const isRandomSort = !sort_by || sort_by === 'random';
-
-        for (let i = 0; i < 2; i++) {
-            const page = isRandomSort ? (Math.floor(Math.random() * 10) + 1) : (i + 1);
-            let url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&with_genres=${genreId}&page=${page}&vote_count.gte=50`;
+        let totalPages = 10; // Default fallback
+        try {
+            let initUrl = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&with_genres=${genreId}&vote_count.gte=50`;
+            if (yearStart) initUrl += `&primary_release_date.gte=${yearStart}-01-01`;
+            if (yearEnd) initUrl += `&primary_release_date.lte=${yearEnd}-12-31`;
+            if (country) initUrl += `&with_origin_country=${country}`;
             
+            const initRes = await fetchWithRetry(initUrl);
+            const initData = await initRes.json();
+            if (initData.total_pages) {
+                // TMDB strictly limits pagination to a maximum of 500 pages
+                totalPages = Math.min(initData.total_pages, 500);
+            }
+        } catch (e) {
+            console.error("Failed to fetch total_pages for discover", e);
+        }
+
+        const wdb = require('../../db/watchlistDb');
+        const movieCache = getCache('movie');
+        let watchedIds = movieCache.watchedIds;
+        if (!watchedIds) {
+            watchedIds = new Set(db.prepare('SELECT tmdb_id FROM watched').all().map(r => r.tmdb_id));
+            movieCache.watchedIds = watchedIds;
+        }
+        let watchlistIds = movieCache.watchlistIds;
+        if (!watchlistIds) {
+            watchlistIds = new Set(wdb.prepare('SELECT tmdb_id FROM watchlist').all().map(r => r.tmdb_id));
+            movieCache.watchlistIds = watchlistIds;
+        }
+
+        const targetCandidateCount = 40;
+        const maxApiFetches = 10;
+        const candidates = [];
+        let apiFetches = 0;
+        
+        let currentPage = 1;
+        if (!isRandomSort && depthPct > 0) {
+            currentPage = Math.floor((depthPct / 100) * totalPages) + 1;
+            currentPage = Math.min(currentPage, totalPages);
+        }
+        const initialStartPage = currentPage;
+        const seenPages = new Set();
+
+        while (candidates.length < targetCandidateCount && apiFetches < maxApiFetches) {
+            let page;
+            if (isRandomSort) {
+                page = Math.floor(Math.random() * totalPages) + 1;
+                if (seenPages.has(page)) {
+                    if (seenPages.size >= totalPages) break;
+                    continue;
+                }
+            } else {
+                page = currentPage;
+            }
+            seenPages.add(page);
+            apiFetches++;
+
+            let url = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&with_genres=${genreId}&page=${page}&vote_count.gte=50`;
             if (!isRandomSort) url += `&sort_by=${sort_by}`;
             if (yearStart) url += `&primary_release_date.gte=${yearStart}-01-01`;
             if (yearEnd) url += `&primary_release_date.lte=${yearEnd}-12-31`;
@@ -45,20 +98,26 @@ router.get('/', async (req, res) => {
             
             const tmdbRes = await fetchWithRetry(url);
             const data = await tmdbRes.json();
-            if (data.results) {
-                candidates.push(...data.results);
+            
+            if (data.results && data.results.length > 0) {
+                const unseen = data.results.filter(m => !watchedIds.has(m.id) && !watchlistIds.has(m.id));
+                candidates.push(...unseen);
+            }
+            
+            if (!isRandomSort) {
+                currentPage++;
+                if (currentPage > totalPages) break;
+            } else {
+                if (seenPages.size >= totalPages) break;
             }
         }
 
-        const wdb = require('../../db/watchlistDb');
-        const watchedIds = new Set(db.prepare('SELECT tmdb_id FROM watched').all().map(r => r.tmdb_id));
-        const watchlistIds = new Set(wdb.prepare('SELECT tmdb_id FROM watchlist').all().map(r => r.tmdb_id));
-
-        const filteredCandidates = candidates.filter(m => !watchedIds.has(m.id) && !watchlistIds.has(m.id));
-
-        if (filteredCandidates.length === 0) {
+        if (candidates.length === 0) {
             return res.status(404).json({ error: 'No candidates found (or all candidates have already been watched/watchlisted)' });
         }
+
+        // We already filtered unseen, so filteredCandidates is just candidates
+        const filteredCandidates = candidates;
 
         // Build Engine
         const vocab = buildVocab(db);
@@ -109,6 +168,7 @@ router.get('/', async (req, res) => {
                 let director = null;
                 let top_cast = [];
                 let production_companies = [];
+                let genres = [targetGenre]; // Default fallback
                 
                 try {
                     const detailsRes = await fetchWithRetry(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}&append_to_response=credits,keywords`);
@@ -124,6 +184,9 @@ router.get('/', async (req, res) => {
                     if (detailsData.production_companies) {
                         production_companies = detailsData.production_companies.map(p => p.name);
                     }
+                    if (detailsData.genres) {
+                        genres = detailsData.genres.map(g => g.name);
+                    }
                     movie.overview = detailsData.overview || movie.overview;
                     movie.original_language = detailsData.original_language || movie.original_language;
                 } catch (e) {}
@@ -134,7 +197,7 @@ router.get('/', async (req, res) => {
                     if (embedArr) plot_embedding = JSON.stringify(embedArr);
                 }
 
-                return { ...movie, keywords_arr: keywords, plot_embedding, director, top_cast, production_companies };
+                return { ...movie, keywords_arr: keywords, plot_embedding, director, top_cast, production_companies, genres };
             })
         ));
 
@@ -144,7 +207,7 @@ router.get('/', async (req, res) => {
                 tmdb_rating: movie.vote_average,
                 runtime: 100, 
                 release_year: movie.release_date ? parseInt(movie.release_date.substring(0,4)) : 2000,
-                genres: JSON.stringify([targetGenre]), // Approximation based on search
+                primary_genres: JSON.stringify(movie.genres), // Using fetched genres
                 keywords: JSON.stringify(movie.keywords_arr),
                 country: null,
                 director: movie.director,
@@ -258,7 +321,7 @@ router.get('/', async (req, res) => {
             delete m.movieDenseVec;
         });
 
-        res.json({ movies: selectedMovies });
+        res.json({ movies: selectedMovies, totalPages, startPage: initialStartPage });
 
     } catch (error) {
         console.error('Discover error:', error);

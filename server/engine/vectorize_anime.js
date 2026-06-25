@@ -4,7 +4,7 @@ function buildAnimeVocab(db) {
     const cache = getCache('anime');
     if (cache.vocab) return cache.vocab;
     const rows = db.prepare(`
-        SELECT a.genres, a.tags, a.director, a.studios 
+        SELECT COALESCE(a.primary_genres, a.genres) as active_genres, a.tags, a.director, a.studios 
         FROM watched_anime w 
         JOIN anime a ON w.anilist_id = a.anilist_id
     `).all();
@@ -16,8 +16,8 @@ function buildAnimeVocab(db) {
     const studioCounts = {};
 
     rows.forEach(row => {
-        if (row.genres) {
-            JSON.parse(row.genres).forEach(g => { genreCounts[g] = (genreCounts[g] || 0) + 1; });
+        if (row.active_genres) {
+            JSON.parse(row.active_genres).forEach(g => { genreCounts[g] = (genreCounts[g] || 0) + 1; });
         }
         if (row.tags) {
             JSON.parse(row.tags).forEach(t => { tagCounts[t] = (tagCounts[t] || 0) + 1; });
@@ -74,7 +74,7 @@ function normalizeL2(vec) {
 function vectorizeAnime(anime, vocab) {
     const vec = [];
     
-    const animeGenres = anime.genres ? JSON.parse(anime.genres) : [];
+    const animeGenres = anime.primary_genres ? JSON.parse(anime.primary_genres) : (anime.genres ? JSON.parse(anime.genres) : []);
     vocab.genres.forEach(g => {
         vec.push(animeGenres.includes(g) ? (vocab.idf.genres[g] * 1.0) : 0);
     });

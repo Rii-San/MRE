@@ -15,6 +15,13 @@ function getTasteProfile(db, vocab) {
 
     if (allWatched.length === 0) return null;
 
+    const franchiseCounts = {};
+    allWatched.forEach(m => {
+        if (m.collection_id) {
+            franchiseCounts[m.collection_id] = (franchiseCounts[m.collection_id] || 0) + 1;
+        }
+    });
+
     let profileVec = null;
 
     allWatched.forEach(movie => {
@@ -22,7 +29,12 @@ function getTasteProfile(db, vocab) {
         const daysSince = (Date.now() - watchDate.getTime()) / (1000 * 60 * 60 * 24);
         const temporalMultiplier = Math.exp(-0.002 * Math.max(0, daysSince));
 
-        const weight = ((movie.user_rating - 5.5) / 4.5) * temporalMultiplier;
+        let franchiseWeight = 1.0;
+        if (movie.collection_id && franchiseCounts[movie.collection_id] > 1) {
+            franchiseWeight = 1.0 / Math.sqrt(franchiseCounts[movie.collection_id]);
+        }
+
+        const weight = ((movie.user_rating - 5.5) / 4.5) * temporalMultiplier * franchiseWeight;
         const vec = normalizeL2(vectorizeMovie(movie, vocab));
         
         if (!profileVec) {
@@ -50,6 +62,13 @@ function getAnimeTasteProfile(vocab) {
 
     if (allWatched.length === 0) return null;
 
+    const franchiseCounts = {};
+    allWatched.forEach(a => {
+        if (a.franchise_group_id) {
+            franchiseCounts[a.franchise_group_id] = (franchiseCounts[a.franchise_group_id] || 0) + 1;
+        }
+    });
+
     let profileVec = null;
 
     allWatched.forEach(anime => {
@@ -57,7 +76,12 @@ function getAnimeTasteProfile(vocab) {
         const daysSince = (Date.now() - watchDate.getTime()) / (1000 * 60 * 60 * 24);
         const temporalMultiplier = Math.exp(-0.002 * Math.max(0, daysSince));
 
-        const weight = ((anime.user_rating - 5.5) / 4.5) * temporalMultiplier;
+        let franchiseWeight = 1.0;
+        if (anime.franchise_group_id && franchiseCounts[anime.franchise_group_id] > 1) {
+            franchiseWeight = 1.0 / Math.sqrt(franchiseCounts[anime.franchise_group_id]);
+        }
+
+        const weight = ((anime.user_rating - 5.5) / 4.5) * temporalMultiplier * franchiseWeight;
         const vec = normalizeL2(vectorizeAnime(anime, vocab));
         
         if (!profileVec) {
@@ -127,9 +151,18 @@ function findMismatches(movieVec, profileVec, featureNames) {
 }
 
 // Internal Dense Profile Builders
-function buildDenseProfile(dbConnection, query) {
+function buildDenseProfile(dbConnection, query, franchiseKey) {
     const allWatched = dbConnection.prepare(query).all();
     if (allWatched.length === 0) return null;
+
+    const franchiseCounts = {};
+    if (franchiseKey) {
+        allWatched.forEach(item => {
+            if (item[franchiseKey]) {
+                franchiseCounts[item[franchiseKey]] = (franchiseCounts[item[franchiseKey]] || 0) + 1;
+            }
+        });
+    }
 
     let denseProfileVec = null;
 
@@ -138,7 +171,13 @@ function buildDenseProfile(dbConnection, query) {
             const watchDate = item.watch_date ? new Date(item.watch_date) : new Date();
             const daysSince = (Date.now() - watchDate.getTime()) / (1000 * 60 * 60 * 24);
             const temporalMultiplier = Math.exp(-0.002 * Math.max(0, daysSince));
-            const weight = ((item.user_rating - 5.5) / 4.5) * temporalMultiplier;
+            
+            let franchiseWeight = 1.0;
+            if (franchiseKey && item[franchiseKey] && franchiseCounts[item[franchiseKey]] > 1) {
+                franchiseWeight = 1.0 / Math.sqrt(franchiseCounts[item[franchiseKey]]);
+            }
+
+            const weight = ((item.user_rating - 5.5) / 4.5) * temporalMultiplier * franchiseWeight;
             const vec = JSON.parse(item.plot_embedding);
             
             if (!denseProfileVec) {
@@ -165,10 +204,10 @@ function getCrossPollinatedDenseProfile(db, domain = 'movies') {
     let movieDense = mCache.denseProfileVec;
     if (!movieDense) {
         movieDense = buildDenseProfile(db, `
-            SELECT m.plot_embedding, w.user_rating 
+            SELECT m.plot_embedding, m.collection_id, w.user_rating, w.watch_date 
             FROM watched w JOIN movies m ON w.tmdb_id = m.tmdb_id
             WHERE m.plot_embedding IS NOT NULL
-        `);
+        `, 'collection_id');
         mCache.denseProfileVec = movieDense;
     }
 
@@ -176,10 +215,10 @@ function getCrossPollinatedDenseProfile(db, domain = 'movies') {
     let animeDense = aCache.denseProfileVec;
     if (!animeDense) {
         animeDense = buildDenseProfile(animeDb, `
-            SELECT a.plot_embedding, w.user_rating 
+            SELECT a.plot_embedding, a.franchise_group_id, w.user_rating, w.watch_date 
             FROM watched_anime w JOIN anime a ON w.anilist_id = a.anilist_id
             WHERE a.plot_embedding IS NOT NULL
-        `);
+        `, 'franchise_group_id');
         aCache.denseProfileVec = animeDense;
     }
 

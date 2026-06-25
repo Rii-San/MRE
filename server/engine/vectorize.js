@@ -4,7 +4,7 @@ function buildVocab(db) {
     const cache = getCache('movie');
     if (cache.vocab) return cache.vocab;
     const rows = db.prepare(`
-        SELECT m.genres, m.keywords, m.country, m.director, m.top_cast, m.production_companies, m.original_language 
+        SELECT COALESCE(m.primary_genres, m.genres) as active_genres, m.keywords, m.country, m.director, m.top_cast, m.production_companies, m.original_language 
         FROM watched w 
         JOIN movies m ON w.tmdb_id = m.tmdb_id
     `).all();
@@ -19,8 +19,8 @@ function buildVocab(db) {
     const languageCounts = {};
 
     rows.forEach(row => {
-        if (row.genres) {
-            JSON.parse(row.genres).forEach(g => { genreCounts[g] = (genreCounts[g] || 0) + 1; });
+        if (row.active_genres) {
+            JSON.parse(row.active_genres).forEach(g => { genreCounts[g] = (genreCounts[g] || 0) + 1; });
         }
         if (row.keywords) {
             JSON.parse(row.keywords).forEach(k => { keywordCounts[k] = (keywordCounts[k] || 0) + 1; });
@@ -98,7 +98,7 @@ function normalizeL2(vec) {
 function vectorizeMovie(movie, vocab) {
     const vec = [];
     
-    const movieGenres = movie.genres ? JSON.parse(movie.genres) : [];
+    const movieGenres = movie.primary_genres ? JSON.parse(movie.primary_genres) : (movie.genres ? JSON.parse(movie.genres) : []);
     vocab.genres.forEach(g => {
         vec.push(movieGenres.includes(g) ? (vocab.idf.genres[g] * 1.0) : 0);
     });

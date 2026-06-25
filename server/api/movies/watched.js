@@ -115,36 +115,50 @@ router.post('/bulk', async (req, res) => {
     const today = new Date().toISOString().split('T')[0];
 
     try {
+        // Phase 1: Pre-fetch any uncached movies from TMDB (async, outside transaction)
+        const movieDataMap = new Map();
         for (const entry of entries) {
             if (!entry.tmdb_id || entry.user_rating === undefined || entry.user_rating === '') continue;
-
-            // Ensure movie exists in cache
-            let tmdb_rating = 0;
             const checkMovie = db.prepare('SELECT tmdb_rating FROM movies WHERE tmdb_id = ?').get(entry.tmdb_id);
             if (!checkMovie) {
                 try {
                     const movieInfo = await fetchAndCacheMovie(entry.tmdb_id);
-                    tmdb_rating = movieInfo.tmdb_rating;
-                } catch (e) { continue; } // skip if tmdb fails
+                    movieDataMap.set(entry.tmdb_id, movieInfo.tmdb_rating);
+                } catch (e) { 
+                    movieDataMap.set(entry.tmdb_id, null); // mark as failed
+                }
             } else {
-                tmdb_rating = checkMovie.tmdb_rating;
+                movieDataMap.set(entry.tmdb_id, checkMovie.tmdb_rating);
             }
-
-            const rating_diff = parseFloat(entry.user_rating) - tmdb_rating;
-
-            // Upsert watched log
-            const existing = db.prepare('SELECT id FROM watched WHERE tmdb_id = ?').get(entry.tmdb_id);
-            if (existing) {
-                db.prepare('UPDATE watched SET user_rating = ?, rating_diff = ? WHERE tmdb_id = ?')
-                  .run(entry.user_rating, rating_diff, entry.tmdb_id);
-            } else {
-                db.prepare(`
-                    INSERT INTO watched (tmdb_id, user_rating, rating_diff, watch_date, rewatch, notes)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                `).run(entry.tmdb_id, entry.user_rating, rating_diff, today, 0, null);
-            }
-            imported++;
         }
+
+        // Phase 2: Batch all DB writes in a single transaction
+        const bulkTransaction = db.transaction(() => {
+            let count = 0;
+            for (const entry of entries) {
+                if (!entry.tmdb_id || entry.user_rating === undefined || entry.user_rating === '') continue;
+                
+                const tmdb_rating = movieDataMap.get(entry.tmdb_id);
+                if (tmdb_rating === null || tmdb_rating === undefined) continue; // skip failed fetches
+
+                const rating_diff = parseFloat(entry.user_rating) - tmdb_rating;
+
+                const existing = db.prepare('SELECT id FROM watched WHERE tmdb_id = ?').get(entry.tmdb_id);
+                if (existing) {
+                    db.prepare('UPDATE watched SET user_rating = ?, rating_diff = ? WHERE tmdb_id = ?')
+                      .run(entry.user_rating, rating_diff, entry.tmdb_id);
+                } else {
+                    db.prepare(`
+                        INSERT INTO watched (tmdb_id, user_rating, rating_diff, watch_date, rewatch, notes)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    `).run(entry.tmdb_id, entry.user_rating, rating_diff, today, 0, null);
+                }
+                count++;
+            }
+            return count;
+        });
+
+        imported = bulkTransaction();
 
         if (imported > 0) invalidateCache('movie');
         res.json({ success: true, imported });

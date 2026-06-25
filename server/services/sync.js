@@ -1,6 +1,8 @@
 const db = require('../db/db');
 const { getEmbedding } = require('../llm');
 const { fetchWithRetry } = require('../tmdb');
+const { selectPrimaryGenres, computeGenreIDF } = require('../engine/genre_utils');
+const { getCache, invalidateGenreIDF } = require('../engine/cache');
 
 let status = {
     running: false,
@@ -11,19 +13,13 @@ let status = {
 let currentInterval = 2000;
 let noHitCount = 0;
 
-// Keep track of IDs that we've already processed in this session so we don't infinitely loop on them if TMDB lacks the data
-const processedIds = new Set();
+// Keep track of attempts so we can remove items that consistently fail
+const syncAttempts = new Map();
 
 async function processNext() {
     try {
-        let query = `SELECT * FROM movies WHERE (plot_embedding IS NULL OR overview IS NULL OR overview = '' OR director IS NULL OR top_cast IS NULL OR production_companies IS NULL OR original_language IS NULL OR adult IS NULL)`;
+        let query = `SELECT * FROM movies WHERE (plot_embedding IS NULL OR overview IS NULL OR overview = '' OR director IS NULL OR top_cast IS NULL OR production_companies IS NULL OR original_language IS NULL OR adult IS NULL OR primary_genres IS NULL)`;
         let params = [];
-        
-        if (processedIds.size > 0) {
-            let placeholders = Array.from(processedIds).map(() => '?').join(',');
-            query += ` AND tmdb_id NOT IN (${placeholders})`;
-            params = Array.from(processedIds);
-        }
         
         const moviesToSync = db.prepare(query).all(...params);
         status.remaining = moviesToSync.length;
@@ -52,7 +48,7 @@ async function processNext() {
         console.log(`[Sync] Repairing data for: ${m.title}`);
         
         let needsApiFetch = false;
-        if (!m.overview || !m.director || !m.top_cast || !m.production_companies || !m.original_language || m.adult === null) {
+        if (!m.overview || !m.director || !m.top_cast || !m.production_companies || !m.original_language || m.adult === null || !m.primary_genres) {
             needsApiFetch = true;
         }
 
@@ -71,13 +67,28 @@ async function processNext() {
                 const original_language = data.original_language || null;
                 const adult = data.adult ? 1 : 0;
                 const keywords = JSON.stringify(data.keywords?.keywords?.map(k => k.name) || []);
-                const genres = JSON.stringify(data.genres?.map(g => g.name) || []);
+                const genreNames = data.genres?.map(g => g.name) || [];
+                const genres = JSON.stringify(genreNames);
+                const collection_id = data.belongs_to_collection?.id || null;
+                const collection_name = data.belongs_to_collection?.name || null;
+
+                // Compute primary genres
+                const movieCache = getCache('movie');
+                let genreIDF = movieCache.genreIDF;
+                if (!genreIDF) {
+                    const allGenreRows = db.prepare('SELECT genres FROM movies WHERE genres IS NOT NULL').all();
+                    const allGenreArrays = allGenreRows.map(r => { try { return JSON.parse(r.genres); } catch(e) { return []; } });
+                    genreIDF = computeGenreIDF(allGenreArrays);
+                    movieCache.genreIDF = genreIDF;
+                }
+                const primary_genres = JSON.stringify(selectPrimaryGenres(genreNames, genreIDF, 2));
 
                 db.prepare(`
                     UPDATE movies 
-                    SET overview = ?, director = ?, top_cast = ?, production_companies = ?, original_language = ?, adult = ?, keywords = ?, genres = ?
+                    SET overview = ?, director = ?, top_cast = ?, production_companies = ?, original_language = ?, adult = ?, keywords = ?, genres = ?, collection_id = ?, collection_name = ?, primary_genres = ?
                     WHERE tmdb_id = ?
-                `).run(overview, director, top_cast, production_companies, original_language, adult, keywords, genres, m.tmdb_id);
+                `).run(overview, director, top_cast, production_companies, original_language, adult, keywords, genres, collection_id, collection_name, primary_genres, m.tmdb_id);
+                invalidateGenreIDF('movie');
                 
             } catch (e) {
                 console.log(`[Sync] Failed to fetch TMDB API for ${m.title}`);
@@ -98,8 +109,28 @@ async function processNext() {
             }
         }
 
-        // Always add to processedIds so we don't retry it infinitely if it legitimately lacks TMDB data
-        processedIds.add(m.tmdb_id);
+        // Check if it's still missing data after our attempts
+        const updatedM = db.prepare('SELECT * FROM movies WHERE tmdb_id = ?').get(m.tmdb_id);
+        const stillMissing = !updatedM || (!updatedM.overview || updatedM.overview === '' || !updatedM.director || !updatedM.top_cast || !updatedM.production_companies || !updatedM.original_language || updatedM.adult === null || !updatedM.plot_embedding || !updatedM.primary_genres);
+
+        if (stillMissing) {
+            let attempts = syncAttempts.get(m.tmdb_id) || 0;
+            attempts++;
+            
+            if (attempts >= 3) {
+                console.log(`[Sync] Deleting ${m.title} after 3 failed attempts to fetch complete details.`);
+                try {
+                    db.prepare('DELETE FROM watched WHERE tmdb_id = ?').run(m.tmdb_id);
+                } catch(e) {}
+                db.prepare('DELETE FROM movies WHERE tmdb_id = ?').run(m.tmdb_id);
+                syncAttempts.delete(m.tmdb_id);
+            } else {
+                syncAttempts.set(m.tmdb_id, attempts);
+            }
+        } else {
+            // Success, remove from tracking
+            syncAttempts.delete(m.tmdb_id);
+        }
 
     } catch (err) {
         console.error("[Sync] Loop error:", err);
