@@ -248,6 +248,12 @@ function getDenseTasteProfile(db) {
     return getCrossPollinatedDenseProfile(db, 'movies');
 }
 
+function calculateMatchPercentage(finalSimilarity) {
+    const shifted = (finalSimilarity - 0.45) * 12;
+    const sigmoid = 1 / (1 + Math.exp(-shifted));
+    return Math.min(Math.round(sigmoid * 100), 100);
+}
+
 module.exports = { 
     getTasteProfile, 
     getAnimeTasteProfile, 
@@ -255,5 +261,6 @@ module.exports = {
     getCrossPollinatedDenseProfile, 
     cosineSimilarity, 
     explainMatchDetailed, 
-    findMismatches 
+    findMismatches,
+    calculateMatchPercentage
 };

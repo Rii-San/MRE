@@ -3,7 +3,7 @@ const router = express.Router();
 const db = require('../../db/db');
 const { fetchWithRetry } = require('../../tmdb');
 const { buildVocab, normalizeL2, vectorizeMovie, getFeatureNames } = require('../../engine/vectorize');
-const { getTasteProfile, cosineSimilarity, explainMatchDetailed } = require('../../engine/score');
+const { getTasteProfile, getDenseTasteProfile, cosineSimilarity, explainMatchDetailed, calculateMatchPercentage } = require('../../engine/score');
 const { getCache } = require('../../engine/cache');
 
 // TMDB Genre Map
@@ -243,10 +243,8 @@ router.get('/', async (req, res) => {
                 } catch (e) {}
             }
             
-            // Use a sigmoid function to scale the raw similarity score into a human-readable percentage
-            const shifted = (finalSimilarity - 0.35) * 10;
-            const sigmoid = 1 / (1 + Math.exp(-shifted));
-            const percentage = Math.min(Math.round(sigmoid * 100), 100);
+            // Use central logic to scale similarity into a human-readable percentage
+            const percentage = calculateMatchPercentage(finalSimilarity);
 
             let weight = finalSimilarity;
             if (hidden_gem === 'true') {
@@ -280,7 +278,7 @@ router.get('/', async (req, res) => {
         const selectedMovies = [];
         let remaining = [...scoredCandidates];
 
-        while (selectedMovies.length < 10 && remaining.length > 0) {
+        while (selectedMovies.length < 30 && remaining.length > 0) {
             if (selectedMovies.length === 0) {
                 remaining.sort((a, b) => b.weight_used - a.weight_used);
                 selectedMovies.push(remaining.shift());
@@ -314,6 +312,9 @@ router.get('/', async (req, res) => {
                 remaining.splice(bestIdx, 1);
             }
         }
+        
+        // Sort the final selection strictly by match score to fix jumbled ordering
+        selectedMovies.sort((a, b) => b.match_score - a.match_score);
         
         // Clean up vectors before sending to client
         selectedMovies.forEach(m => {

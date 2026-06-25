@@ -5,7 +5,7 @@ const wdb = require('../../db/anime_watchlistDb');
 const movieDb = require('../../db/db');
 const { fetchWithAniListRetry } = require('../../anilist');
 const { buildAnimeVocab, normalizeL2, vectorizeAnime, getAnimeFeatureNames } = require('../../engine/vectorize_anime');
-const { getAnimeTasteProfile, getCrossPollinatedDenseProfile, cosineSimilarity, explainMatchDetailed } = require('../../engine/score');
+const { getAnimeTasteProfile, getCrossPollinatedDenseProfile, cosineSimilarity, explainMatchDetailed, calculateMatchPercentage } = require('../../engine/score');
 const { getCache } = require('../../engine/cache');
 
 // GET /api/anime_discover?genre=Action
@@ -222,10 +222,8 @@ router.get('/', async (req, res) => {
             // Blend similarities
             const finalSimilarity = (sparseSimilarity * 0.4) + (denseSimilarity * 0.6);
             
-            // Use a sigmoid function to scale the raw similarity score into a human-readable percentage
-            const shifted = (finalSimilarity - 0.35) * 10;
-            const sigmoid = 1 / (1 + Math.exp(-shifted));
-            const percentage = Math.min(Math.round(sigmoid * 100), 100);
+            // Use central logic to scale similarity into a human-readable percentage
+            const percentage = calculateMatchPercentage(finalSimilarity);
             
             // Adjust weight by AniList popularity (log scale) to avoid pushing literal trash
             let popPenalty = Math.log10(anime.popularity || 10) / 5; 
@@ -262,7 +260,7 @@ router.get('/', async (req, res) => {
         const selectedMovies = [];
         let remaining = [...scoredCandidates];
 
-        while (selectedMovies.length < 10 && remaining.length > 0) {
+        while (selectedMovies.length < 30 && remaining.length > 0) {
             if (selectedMovies.length === 0) {
                 remaining.sort((a, b) => b.weight_used - a.weight_used);
                 selectedMovies.push(remaining.shift());
@@ -293,10 +291,15 @@ router.get('/', async (req, res) => {
             }
         }
 
+        // Sort the final selection strictly by match score to fix jumbled ordering
+        selectedMovies.sort((a, b) => b.match_score - a.match_score);
+
         // Add explanations
         selectedMovies.forEach(m => {
-            const pos = m.top_features.slice(0, 3).map(e => e.friendlyName).join(', ');
+            const pos = m.top_features.slice(0, 3).map(e => e.friendlyName || e.rawName || e.name).join(', ');
             m.explanation = `Matches your taste for ${pos}.`;
+            delete m.movieVec;
+            delete m.movieDenseVec;
         });
 
         res.json({ movies: selectedMovies, totalPages, startPage: initialStartPage });

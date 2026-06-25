@@ -168,4 +168,22 @@ router.post('/bulk', async (req, res) => {
     }
 });
 
+// DELETE /api/watched/:tmdb_id
+router.delete('/:tmdb_id', (req, res) => {
+    try {
+        const stmt = db.prepare('DELETE FROM watched WHERE tmdb_id = ?');
+        const info = stmt.run(req.params.tmdb_id);
+        
+        if (info.changes === 0) {
+            return res.status(404).json({ error: 'Movie not found in archive' });
+        }
+        
+        invalidateCache('movie');
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting watched movie:', error);
+        res.status(500).json({ error: 'Failed to delete from archive' });
+    }
+});
+
 module.exports = router;

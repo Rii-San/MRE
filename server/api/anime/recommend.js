@@ -4,7 +4,7 @@ const db = require('../../db/anime_db');
 const moviesDb = require('../../db/db');
 const { fetchAndCacheAnime } = require('../../anilist');
 const { buildAnimeVocab, getAnimeFeatureNames, vectorizeAnime, normalizeL2 } = require('../../engine/vectorize_anime');
-const { getAnimeTasteProfile, getCrossPollinatedDenseProfile, cosineSimilarity, explainMatchDetailed, findMismatches } = require('../../engine/score');
+const { getAnimeTasteProfile, getCrossPollinatedDenseProfile, cosineSimilarity, explainMatchDetailed, findMismatches, calculateMatchPercentage } = require('../../engine/score');
 
 // POST /api/anime_recommend/predict
 // Body: { tmdb_id }  (Wait, frontend will send tmdb_id parameter because of shared UI)
@@ -66,10 +66,8 @@ router.post('/predict', async (req, res) => {
             }
         }
 
-        // Use a sigmoid function to scale the raw similarity score into a human-readable percentage
-        const shifted = (finalSimilarity - 0.35) * 10;
-        const sigmoid = 1 / (1 + Math.exp(-shifted));
-        const percentage = Math.min(Math.round(sigmoid * 100), 100);
+        // Use central logic to scale similarity into a human-readable percentage
+        const percentage = calculateMatchPercentage(finalSimilarity);
 
         const topContributions = explainMatchDetailed(animeVec, profileVec, featureNames);
         const reasons = topContributions.slice(0, 3).map(c => c.friendlyName);

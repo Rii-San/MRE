@@ -100,10 +100,23 @@ router.get('/', (req, res) => {
                 .slice(0, 5);
         };
 
+        const sortStatsByScore = (statsObj, minCount = 1) => {
+            return Object.keys(statsObj)
+                .filter(k => statsObj[k].count >= minCount)
+                .map(k => ({
+                    name: k,
+                    count: statsObj[k].count,
+                    score: statsObj[k].sumRating / 10,
+                    avgRating: (statsObj[k].sumRating / statsObj[k].count).toFixed(1)
+                }))
+                .sort((a, b) => b.score - a.score || b.count - a.count)
+                .slice(0, 5);
+        };
+
         const topGenres = sortStats(genreStats, 1);
         const topTags = sortStats(tagStats, 2);
-        const topDirectors = sortStats(directorStats, 2);
-        const topStudios = sortStats(studioStats, 2);
+        const topDirectors = sortStatsByScore(directorStats, 2);
+        const topStudios = sortStatsByScore(studioStats, 2);
 
         let crowdRelation = "You agree with the community.";
         if (avgDiscrepancy > 0.5) crowdRelation = `You are generous! You rate anime ${avgDiscrepancy} points higher than AniList average.`;

@@ -93,9 +93,22 @@ router.get('/', (req, res) => {
                 .slice(0, 5);
         };
 
+        const sortStatsByScore = (statsObj, minCount = 1) => {
+            return Object.keys(statsObj)
+                .filter(k => statsObj[k].count >= minCount)
+                .map(k => ({
+                    name: k,
+                    count: statsObj[k].count,
+                    score: statsObj[k].sumRating / 10,
+                    avgRating: (statsObj[k].sumRating / statsObj[k].count).toFixed(1)
+                }))
+                .sort((a, b) => b.score - a.score || b.count - a.count)
+                .slice(0, 5);
+        };
+
         const topGenres = sortStats(genreStats, 1);
-        const topDirectors = sortStats(directorStats, 2); // At least 2 movies to be a top director
-        const topActors = sortStats(actorStats, 2); // At least 2 movies to be a top actor
+        const topDirectors = sortStatsByScore(directorStats, 2); // At least 2 movies to be a top director
+        const topActors = sortStatsByScore(actorStats, 2); // At least 2 movies to be a top actor
 
         // Generate a fun fact based on avgDiscrepancy
         let crowdRelation = "You agree with the crowd.";

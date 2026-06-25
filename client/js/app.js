@@ -406,6 +406,43 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target === editModal) editModal.classList.add('hidden');
     });
 
+    // Delete from Archive
+    const deleteArchiveBtn = document.getElementById('delete-archive-btn');
+    if (deleteArchiveBtn) {
+        deleteArchiveBtn.addEventListener('click', async () => {
+            const confirmed = window.confirm("Are you sure you want to remove this from your archive? It will be gone from the database.");
+            if (!confirmed) return;
+
+            const originalText = deleteArchiveBtn.textContent;
+            deleteArchiveBtn.textContent = 'Removing...';
+            deleteArchiveBtn.disabled = true;
+
+            const tmdbId = document.getElementById('edit-tmdb-id').value;
+            const endpoint = window.CURRENT_DOMAIN === 'anime' ? `anime_watched/${tmdbId}` : `watched/${tmdbId}`;
+
+            try {
+                const res = await fetch(apiUrl(endpoint), {
+                    method: 'DELETE'
+                });
+
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.error || 'Failed to remove from archive');
+                }
+
+                showToast('✅ Removed from Archive');
+                editModal.classList.add('hidden');
+                fetchArchive();
+            } catch (err) {
+                console.error(err);
+                showToast(`❌ ${err.message}`, true);
+            } finally {
+                deleteArchiveBtn.textContent = originalText;
+                deleteArchiveBtn.disabled = false;
+            }
+        });
+    }
+
     // Save changes
     editLogForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1000,6 +1037,130 @@ predictSearchInput.addEventListener('input', (e) => {
 const discoverBtn = document.getElementById('discover-btn');
 const discoverResult = document.getElementById('discover-result');
 
+let currentDiscoverResults = [];
+let currentDiscoverPage = 1;
+const DISCOVER_PER_PAGE = 6;
+
+function renderDiscoverPage() {
+    const listEl = document.getElementById('discover-list');
+    const paginationEl = document.getElementById('discover-pagination');
+    
+    if (!currentDiscoverResults || currentDiscoverResults.length === 0) {
+        listEl.innerHTML = '<p>No results found.</p>';
+        if (paginationEl) {
+            paginationEl.innerHTML = '';
+            paginationEl.classList.add('hidden');
+        }
+        return;
+    }
+
+    const totalPages = Math.ceil(currentDiscoverResults.length / DISCOVER_PER_PAGE);
+    const startIndex = (currentDiscoverPage - 1) * DISCOVER_PER_PAGE;
+    const endIndex = startIndex + DISCOVER_PER_PAGE;
+    const pageItems = currentDiscoverResults.slice(startIndex, endIndex);
+
+    listEl.innerHTML = pageItems.map((m, idx) => {
+        const statsHtml = `<div class="nerd-stats" style="margin-top:0.5rem;">
+            <div class="nerd-title">🤓 Nerd Stats</div>
+            <div>Metadata match (TF-IDF): ${m.raw_cosine_similarity.toFixed(4)}</div>
+            ${m.dense_similarity ? `<div>Plot meaning match (Semantic): ${m.dense_similarity.toFixed(4)}</div>` : ''}
+            <div style="color:var(--accent-primary); margin-top:0.2rem; font-weight:bold;">Blended Score: ${m.final_similarity.toFixed(4)}</div>
+            <div style="margin-top:0.4rem; margin-bottom:0.2rem;">Top matching features:</div>
+            <ul>${m.top_features.map(f => `<li>+${f.score.toFixed(3)} ${f.rawName || f.friendlyName || f.name}</li>`).join('')}</ul>
+        </div>`;
+
+        const posterHtml = m.poster_path
+            ? (m.poster_path.startsWith('http') 
+                ? `<img src="${m.poster_path}" alt="Poster" style="width:80px; min-width:80px; border-radius:10px; box-shadow: 0 6px 16px rgba(0,0,0,0.6);">`
+                : `<img src="https://image.tmdb.org/t/p/w185${m.poster_path}" alt="Poster" style="width:80px; min-width:80px; border-radius:10px; box-shadow: 0 6px 16px rgba(0,0,0,0.6);">`)
+            : `<div style="width:80px; min-width:80px; height:120px; background:rgba(255,255,255,0.04); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1.5rem;">🎬</div>`;
+
+        return `
+        <div class="glass-panel slide-up" style="display:flex; gap:1.5rem; align-items:flex-start; padding: 1.5rem; animation-delay:${idx*0.06}s;">
+            ${posterHtml}
+            <div style="flex:1; min-width:0;">
+                <div style="display:flex; align-items:baseline; gap:0.6rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+                    <h3 style="font-size:1.15rem; font-weight:700;">${m.title}</h3>
+                    <span style="color:var(--text-secondary); font-size:0.9rem;">${m.release_year}</span>
+                </div>
+                <div style="display:flex; gap:0.5rem; margin-bottom:0.8rem; flex-wrap:wrap;">
+                    <span class="rating-badge">🎯 ${m.match_score}% match</span>
+                    <span class="rating-badge" style="background:rgba(255,255,255,0.05); border-color:var(--glass-border); color:var(--text-secondary);">⭐ ${parseFloat(m.tmdb_rating).toFixed(1)} ${window.CURRENT_DOMAIN === 'anime' ? 'AniList' : 'TMDB'}</span>
+                </div>
+                <p style="color: var(--text-secondary); font-size:0.9rem; line-height: 1.55; margin-bottom:0.8rem;">${m.overview || 'No overview available.'}</p>
+                ${statsHtml}
+                <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+                    <button class="primary-btn quicklog-trigger" 
+                        data-tmdb-id="${m.id}" 
+                        data-title="${m.title.replace(/"/g, '&quot;')}" 
+                        style="flex:1; font-size:0.82rem; padding:0.45rem 0.9rem;">
+                        ➕ Add to Archive
+                    </button>
+                    <button class="secondary-btn discover-add-watchlist-btn" 
+                        data-id="${m.id}" 
+                        data-title="${m.title.replace(/"/g, '&quot;')}" 
+                        data-year="${m.release_year}" 
+                        data-poster="${m.poster_path}" 
+                        style="flex:1; font-size:0.82rem; padding:0.45rem 0.9rem;">
+                        📋 Watchlist
+                    </button>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+
+    // Wire up buttons
+    document.querySelectorAll('.quicklog-trigger').forEach(btn => {
+        btn.addEventListener('click', () => openQuickLog(btn.dataset.tmdbId, btn.dataset.title));
+    });
+
+    document.querySelectorAll('.discover-add-watchlist-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            try {
+                const payload = {
+                    tmdb_id: e.currentTarget.dataset.id,
+                    title: e.currentTarget.dataset.title,
+                    release_year: e.currentTarget.dataset.year,
+                    poster_path: e.currentTarget.dataset.poster
+                };
+                const rw = await fetch(apiUrl('watchlist'), {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload)
+                });
+                const rd = await rw.json();
+                if(!rw.ok) throw new Error(rd.error);
+                showToast('✅ Added to Watchlist!');
+            } catch(err) {
+                showToast('❌ ' + err.message, true);
+            }
+        });
+    });
+
+    // Render pagination
+    if (paginationEl) {
+        if (totalPages > 1) {
+            let pagesHtml = '';
+            for (let i = 1; i <= totalPages; i++) {
+                pagesHtml += `<button class="page-btn ${i === currentDiscoverPage ? 'active' : ''}" data-page="${i}">${i}</button>`;
+            }
+            paginationEl.innerHTML = pagesHtml;
+            
+            document.querySelectorAll('.page-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    currentDiscoverPage = parseInt(e.currentTarget.dataset.page);
+                    renderDiscoverPage();
+                    document.getElementById('view-discover').scrollIntoView({ behavior: 'smooth' });
+                });
+            });
+            paginationEl.classList.remove('hidden');
+        } else {
+            paginationEl.innerHTML = '';
+            paginationEl.classList.add('hidden');
+        }
+    }
+}
+
 discoverBtn.addEventListener('click', async () => {
     const genre = document.getElementById('discover-genre').value;
     const country = document.getElementById('discover-country').value;
@@ -1023,84 +1184,9 @@ discoverBtn.addEventListener('click', async () => {
             updateDepthHint(depth, data.totalPages);
         }
         
-        const listEl = document.getElementById('discover-list');
-        listEl.innerHTML = data.movies.map((m, idx) => {
-            const statsHtml = `<div class="nerd-stats" style="margin-top:0.5rem;">
-                <div class="nerd-title">🤓 Nerd Stats</div>
-                <div>Metadata match (TF-IDF): ${m.raw_cosine_similarity.toFixed(4)}</div>
-                ${m.dense_similarity ? `<div>Plot meaning match (Semantic): ${m.dense_similarity.toFixed(4)}</div>` : ''}
-                <div style="color:var(--accent-primary); margin-top:0.2rem; font-weight:bold;">Blended Score: ${m.final_similarity.toFixed(4)}</div>
-                <div style="margin-top:0.4rem; margin-bottom:0.2rem;">Top matching features:</div>
-                <ul>${m.top_features.map(f => `<li>+${f.score.toFixed(3)} ${f.rawName}</li>`).join('')}</ul>
-            </div>`;
-
-            const posterHtml = m.poster_path
-                ? (m.poster_path.startsWith('http') 
-                    ? `<img src="${m.poster_path}" alt="Poster" style="width:80px; min-width:80px; border-radius:10px; box-shadow: 0 6px 16px rgba(0,0,0,0.6);">`
-                    : `<img src="https://image.tmdb.org/t/p/w185${m.poster_path}" alt="Poster" style="width:80px; min-width:80px; border-radius:10px; box-shadow: 0 6px 16px rgba(0,0,0,0.6);">`)
-                : `<div style="width:80px; min-width:80px; height:120px; background:rgba(255,255,255,0.04); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1.5rem;">🎬</div>`;
-
-            return `
-            <div class="glass-panel slide-up" style="display:flex; gap:1.5rem; align-items:flex-start; padding: 1.5rem; animation-delay:${idx*0.06}s;">
-                ${posterHtml}
-                <div style="flex:1; min-width:0;">
-                    <div style="display:flex; align-items:baseline; gap:0.6rem; flex-wrap:wrap; margin-bottom:0.5rem;">
-                        <h3 style="font-size:1.15rem; font-weight:700;">${m.title}</h3>
-                        <span style="color:var(--text-secondary); font-size:0.9rem;">${m.release_year}</span>
-                    </div>
-                    <div style="display:flex; gap:0.5rem; margin-bottom:0.8rem; flex-wrap:wrap;">
-                        <span class="rating-badge">🎯 ${m.match_score}% match</span>
-                        <span class="rating-badge" style="background:rgba(255,255,255,0.05); border-color:var(--glass-border); color:var(--text-secondary);">⭐ ${parseFloat(m.tmdb_rating).toFixed(1)} TMDB</span>
-                    </div>
-                    <p style="color: var(--text-secondary); font-size:0.9rem; line-height: 1.55; margin-bottom:0.8rem;">${m.overview || 'No overview available.'}</p>
-                    ${statsHtml}
-                    <div style="display:flex; gap:0.5rem; margin-top:1rem;">
-                        <button class="primary-btn quicklog-trigger" 
-                            data-tmdb-id="${m.id}" 
-                            data-title="${m.title.replace(/"/g, '&quot;')}" 
-                            style="flex:1; font-size:0.82rem; padding:0.45rem 0.9rem;">
-                            ➕ Add to Archive
-                        </button>
-                        <button class="secondary-btn discover-add-watchlist-btn" 
-                            data-id="${m.id}" 
-                            data-title="${m.title.replace(/"/g, '&quot;')}" 
-                            data-year="${m.release_year}" 
-                            data-poster="${m.poster_path}" 
-                            style="flex:1; font-size:0.82rem; padding:0.45rem 0.9rem;">
-                            📋 Watchlist
-                        </button>
-                    </div>
-                </div>
-            </div>`;
-        }).join('');
-
-        // Wire up quicklog buttons after render
-        document.querySelectorAll('.quicklog-trigger').forEach(btn => {
-            btn.addEventListener('click', () => openQuickLog(btn.dataset.tmdbId, btn.dataset.title));
-        });
-
-        document.querySelectorAll('.discover-add-watchlist-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                try {
-                    const payload = {
-                        tmdb_id: e.currentTarget.dataset.id,
-                        title: e.currentTarget.dataset.title,
-                        release_year: e.currentTarget.dataset.year,
-                        poster_path: e.currentTarget.dataset.poster
-                    };
-                    const rw = await fetch(apiUrl('watchlist'), {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify(payload)
-                    });
-                    const rd = await rw.json();
-                    if(!rw.ok) throw new Error(rd.error);
-                    showToast('✅ Added to Watchlist!');
-                } catch(err) {
-                    showToast('❌ ' + err.message, true);
-                }
-            });
-        });
+        currentDiscoverResults = data.movies;
+        currentDiscoverPage = 1;
+        renderDiscoverPage();
         
         discoverResult.classList.remove('hidden');
     } catch (err) {
@@ -1128,16 +1214,18 @@ insightsNav.addEventListener('click', async () => {
 
         const generateBarHtml = (arr) => {
             if (!arr || arr.length === 0) return '<p style="color:var(--text-secondary); font-size:0.9rem;">Not enough data yet.</p>';
-            const maxVal = Math.max(...arr.map(x => x.count), 1);
-            return arr.map(x => `
+            const maxVal = Math.max(...arr.map(x => x.score !== undefined ? x.score : x.count), 1);
+            return arr.map(x => {
+                const val = x.score !== undefined ? x.score : x.count;
+                return `
                 <div class="genre-row">
                     <span class="genre-name">${x.name} <span style="color:var(--text-secondary); font-size:0.8rem; font-weight:400;">(${x.count})</span></span>
                     <div class="genre-bar-wrap">
-                        <div class="genre-bar" style="width:${Math.round((x.count/maxVal)*100)}%"></div>
+                        <div class="genre-bar" style="width:${Math.round((val/maxVal)*100)}%"></div>
                     </div>
                     <span class="genre-rating">★ ${x.avgRating}</span>
                 </div>
-            `).join('');
+            `}).join('');
         };
 
         const genreHtml = generateBarHtml(data.top_genres);
