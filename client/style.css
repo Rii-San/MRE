@@ -916,3 +916,110 @@ input[type="range"]#discover-depth:active::-webkit-slider-thumb {
     border-color: #E1DCC9;
     box-shadow: 0 0 10px rgba(225, 220, 201, 0.15);
 }
+
+/* ── Rating Assistant Modal ────────────────────────────── */
+.rating-total-ring {
+    position: relative;
+    width: 60px; height: 60px;
+    flex-shrink: 0;
+}
+.rating-total-ring svg { position: absolute; top:0; left:0; transform: rotate(-90deg); }
+.rating-total-ring .ring-bg { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 4; }
+.rating-total-ring .ring-fill { fill: none; stroke: var(--success, #98c377); stroke-width: 4;
+    stroke-linecap: round; stroke-dasharray: 188.5; stroke-dashoffset: 188.5;
+    transition: stroke-dashoffset 0.5s cubic-bezier(.4,0,.2,1); }
+.rating-total-ring .ring-center {
+    position: absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+}
+.rating-total-ring .ring-num {
+    font-size: 1.25rem; font-weight: 800; color: var(--text-primary); line-height:1;
+}
+
+.categories-wrap { 
+    display: grid; 
+    grid-template-columns: repeat(2, 1fr); 
+    gap: 12px; 
+    max-height: 50vh; 
+    overflow-y: auto; 
+    padding-right: 8px;
+    align-items: start;
+}
+/* For mobile, fallback to 1 column */
+@media (max-width: 600px) {
+    .categories-wrap { grid-template-columns: 1fr; }
+}
+
+.categories-wrap::-webkit-scrollbar { width: 6px; }
+.categories-wrap::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
+.cat-card {
+    background: var(--glass-bg); border: 1px solid var(--glass-border);
+    border-radius: 12px; overflow: hidden;
+    transition: border-color 0.2s;
+}
+.cat-card:focus-within { border-color: var(--accent-color); }
+
+.cat-head {
+    padding: 10px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none;
+    background: rgba(255,255,255,0.03);
+}
+.cat-head-left { display: flex; align-items: center; gap: 8px; }
+.cat-icon { font-size: 1.1rem; }
+.cat-name { font-size: 0.9rem; font-weight: 700; }
+.cat-tagline { font-size: 0.65rem; color: var(--text-secondary); margin-top: 1px; }
+
+.cat-score-pill {
+    background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border);
+    border-radius: 20px; padding: 2px 10px;
+    font-size: 0.8rem; font-weight: 700;
+    color: var(--text-primary); min-width: 48px; text-align: center;
+}
+
+.cat-divider { height: 1px; background: var(--glass-border); margin: 0 14px; }
+
+.subkeys { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+.subkey {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 10px;
+}
+.subkey-name { font-size: 0.78rem; font-weight: 600; color: var(--text-primary); }
+.subkey-q { font-size: 0.65rem; color: var(--text-secondary); font-style: italic; margin-top: 2px; line-height: 1.3; }
+
+.subkey-ctrl { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.sk-btn {
+    width: 24px; height: 24px; border-radius: 6px;
+    border: 1px solid var(--glass-border);
+    background: rgba(255,255,255,0.05);
+    color: var(--text-secondary); font-size: 0.9rem; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s; line-height: 1;
+}
+.sk-btn:hover { background: var(--accent-color); color: #fff; border-color: var(--accent-color); }
+
+.sk-pips { display: flex; gap: 4px; }
+.pip {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(255,255,255,0.2); transition: background 0.15s, transform 0.15s;
+}
+.pip.on { background: var(--success, #98c377); transform: scale(1.15); }
+.pip.on2 { background: var(--success, #98c377); transform: scale(1.2); }
+
+.sk-val {
+    font-size: 0.85rem; font-weight: 700;
+    color: var(--accent-color); min-width: 14px; text-align: center;
+}
+
+/* Hide number input spinners for category overrides */
+.cat-override-input::-webkit-outer-spin-button,
+.cat-override-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.cat-override-input {
+    -moz-appearance: textfield;
+}
