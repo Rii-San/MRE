@@ -365,7 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             showToast('⏳ Importing...');
 
-            const res = await fetch(`${API_BASE}/export`, {
+            const res = await fetch(apiUrl('import'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ entries })
@@ -418,7 +418,7 @@ document.addEventListener('DOMContentLoaded', () => {
             deleteArchiveBtn.disabled = true;
 
             const tmdbId = document.getElementById('edit-tmdb-id').value;
-            const endpoint = window.CURRENT_DOMAIN === 'anime' ? `anime_watched/${tmdbId}` : `watched/${tmdbId}`;
+            const endpoint = `watched/${tmdbId}`;
 
             try {
                 const res = await fetch(apiUrl(endpoint), {
@@ -779,8 +779,7 @@ tmdbSearchInput.addEventListener('input', (e) => {
     
     searchTimeout = setTimeout(async () => {
         try {
-            const searchEndpoint = window.CURRENT_DOMAIN === 'anime' ? 'anime_search' : 'movies/search';
-            const res = await fetch(`${API_BASE}/${searchEndpoint}?query=${encodeURIComponent(query)}`);
+            const res = await fetch(apiUrl(`search?query=${encodeURIComponent(query)}`));
             const data = await res.json();
             
             if (!data.results || data.results.length === 0) {
@@ -896,8 +895,7 @@ predictSearchInput.addEventListener('input', (e) => {
     
     predictSearchTimeout = setTimeout(async () => {
         try {
-            const searchEndpoint = window.CURRENT_DOMAIN === 'anime' ? 'anime_search' : 'movies/search';
-            const res = await fetch(`${API_BASE}/${searchEndpoint}?query=${encodeURIComponent(query)}`);
+            const res = await fetch(apiUrl(`search?query=${encodeURIComponent(query)}`));
             const data = await res.json();
             
             if (!data.results || data.results.length === 0) {
@@ -947,9 +945,12 @@ predictSearchInput.addEventListener('input', (e) => {
                         
                         const statsHtml = `<div class="nerd-stats" style="margin-top:1rem;">
                             <div class="nerd-title">🤓 Nerd Stats</div>
-                            <div>Metadata match (TF-IDF): ${preData.raw_cosine_similarity.toFixed(4)}</div>
-                            ${preData.dense_similarity ? `<div>Plot meaning match (Semantic): ${preData.dense_similarity.toFixed(4)}</div>` : ''}
-                            ${preData.dense_similarity ? `<div>Blended final score: ${preData.final_similarity.toFixed(4)}</div>` : ''}
+                            <div>Tag match (Sparse): ${preData.raw_cosine_similarity.toFixed(4)}</div>
+                            ${preData.dense_similarity ? `<div>Story match (Dense): ${preData.dense_similarity.toFixed(4)}</div>` : ''}
+                            ${preData.narrative_bias !== undefined ? `<div>Narrative match: ${preData.narrative_bias > 0 ? '+' : ''}${preData.narrative_bias.toFixed(4)}</div>` : ''}
+                            ${preData.oracle_bias !== undefined ? `<div style="color:var(--accent-gold, #C9A96E);">Oracle Bias: ${preData.oracle_bias > 0 ? '+' : ''}${preData.oracle_bias.toFixed(4)}</div>` : ''}
+                            ${preData.spiritual_bias !== undefined ? `<div style="color:#d946ef;">Spiritual Bias: ${preData.spiritual_bias > 0 ? '+' : ''}${preData.spiritual_bias.toFixed(4)}</div>` : ''}
+                            ${(preData.dense_similarity || preData.oracle_bias || preData.spiritual_bias || preData.narrative_bias) ? `<div style="font-weight:bold; margin-top:4px;">Blended final score: ${preData.final_similarity.toFixed(4)}</div>` : ''}
                             <div style="margin-top:0.4rem; margin-bottom:0.2rem;">Top metadata matches:</div>
                             <ul>${preData.top_features.map(f => `<li>+${f.score.toFixed(4)} &nbsp;${f.rawName}</li>`).join('')}</ul>
                             ${preData.mismatches && preData.mismatches.length > 0 ? `
@@ -1062,8 +1063,11 @@ function renderDiscoverPage() {
     listEl.innerHTML = pageItems.map((m, idx) => {
         const statsHtml = `<div class="nerd-stats" style="margin-top:0.5rem;">
             <div class="nerd-title">🤓 Nerd Stats</div>
-            <div>Metadata match (TF-IDF): ${m.raw_cosine_similarity.toFixed(4)}</div>
-            ${m.dense_similarity ? `<div>Plot meaning match (Semantic): ${m.dense_similarity.toFixed(4)}</div>` : ''}
+            <div>Tag match (Sparse): ${m.raw_cosine_similarity.toFixed(4)}</div>
+            ${m.dense_similarity ? `<div>Story match (Dense): ${m.dense_similarity.toFixed(4)}</div>` : ''}
+            ${m.narrative_bias !== undefined ? `<div>Narrative match: ${m.narrative_bias > 0 ? '+' : ''}${m.narrative_bias.toFixed(4)}</div>` : ''}
+            ${m.oracle_bias !== undefined ? `<div style="color:var(--accent-gold, #C9A96E);">Oracle Bias: ${m.oracle_bias > 0 ? '+' : ''}${m.oracle_bias.toFixed(4)}</div>` : ''}
+            ${m.spiritual_bias !== undefined ? `<div style="color:#d946ef;">Spiritual Bias: ${m.spiritual_bias > 0 ? '+' : ''}${m.spiritual_bias.toFixed(4)}</div>` : ''}
             <div style="color:var(--accent-primary); margin-top:0.2rem; font-weight:bold;">Blended Score: ${m.final_similarity.toFixed(4)}</div>
             <div style="margin-top:0.4rem; margin-bottom:0.2rem;">Top matching features:</div>
             <ul>${m.top_features.map(f => `<li>+${f.score.toFixed(3)} ${f.rawName || f.friendlyName || f.name}</li>`).join('')}</ul>
@@ -1391,7 +1395,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bulkFetchBtn.disabled = true;
 
             try {
-                const res = await fetch(`${API_BASE}/movies/bulk-match`, {
+                const res = await fetch(apiUrl('search/bulk-match'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ titles })
@@ -1497,5 +1501,211 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-});
+    // --- Deep Insights (Oracle) Logic ---
+    const tabBtns = document.querySelectorAll('.insight-tab-btn');
+    const tabContents = document.querySelectorAll('.insight-tab-content');
 
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            tabBtns.forEach(b => b.classList.remove('active'));
+            tabContents.forEach(c => {
+                c.classList.remove('active');
+                c.style.display = 'none';
+            });
+
+            btn.classList.add('active');
+            const targetId = `insight-tab-${btn.dataset.tab}`;
+            const targetEl = document.getElementById(targetId);
+            if(targetEl) {
+                targetEl.classList.add('active');
+                targetEl.style.display = 'block';
+            }
+            
+            if (btn.dataset.tab === 'oracle') {
+                loadOracleProfile();
+            }
+        });
+    });
+
+    async function loadOracleProfile() {
+        try {
+            const res = await fetch('/api/profile');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.name) document.getElementById('oracle-name').value = data.name;
+                if (data.vedicZodiac) document.getElementById('oracle-vedic').value = data.vedicZodiac;
+                if (data.chineseZodiac) document.getElementById('oracle-chinese').value = data.chineseZodiac;
+                
+                if (data.insightsReading) {
+                    document.getElementById('oracle-reading-container').classList.remove('hidden');
+                    if (window.marked) {
+                        document.getElementById('oracle-reading-content').innerHTML = marked.parse(data.insightsReading);
+                    } else {
+                        document.getElementById('oracle-reading-content').textContent = data.insightsReading;
+                    }
+                }
+            }
+        } catch(e) {}
+    }
+
+    const saveOracleBtn = document.getElementById('btn-save-oracle-profile');
+    if(saveOracleBtn) {
+        saveOracleBtn.addEventListener('click', async () => {
+            const profileData = {
+                name: document.getElementById('oracle-name').value,
+                vedicZodiac: document.getElementById('oracle-vedic').value,
+                chineseZodiac: document.getElementById('oracle-chinese').value
+            };
+            
+            try {
+                const oldText = saveOracleBtn.textContent;
+                saveOracleBtn.textContent = "Saving...";
+                await fetch('/api/profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(profileData)
+                });
+                saveOracleBtn.textContent = "Saved!";
+                setTimeout(() => saveOracleBtn.textContent = oldText, 2000);
+            } catch(e) {
+                alert("Failed to save profile");
+            }
+        });
+    }
+
+    let chatHistory = [];
+    const btnGenerateReading = document.getElementById('btn-generate-reading');
+    if(btnGenerateReading) {
+        btnGenerateReading.addEventListener('click', async () => {
+            btnGenerateReading.textContent = "🔮 Reading the stars... (This takes a moment)";
+            btnGenerateReading.disabled = true;
+            
+            try {
+                const res = await fetch('/api/deep_insights/generate', { method: 'POST' });
+                const data = await res.json();
+                if (data.reading) {
+                    document.getElementById('oracle-reading-container').classList.remove('hidden');
+                    if(window.marked) {
+                        document.getElementById('oracle-reading-content').innerHTML = marked.parse(data.reading);
+                    } else {
+                        document.getElementById('oracle-reading-content').textContent = data.reading;
+                    }
+                    chatHistory = []; // Reset chat history on new reading
+                    document.getElementById('oracle-chat-history').innerHTML = '';
+                } else if (data.error) {
+                    alert(data.error);
+                }
+            } catch(e) {
+                alert("Failed to generate insights: " + e.message);
+            } finally {
+                btnGenerateReading.textContent = "🔮 Consult the Oracle";
+                btnGenerateReading.disabled = false;
+            }
+        });
+    }
+
+    const btnSendChat = document.getElementById('btn-send-chat');
+    const oracleChatInput = document.getElementById('oracle-chat-input');
+    if(btnSendChat && oracleChatInput) {
+        btnSendChat.addEventListener('click', sendOracleChat);
+        oracleChatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendOracleChat();
+        });
+    }
+
+    async function sendOracleChat() {
+        const input = document.getElementById('oracle-chat-input');
+        const msg = input.value.trim();
+        if (!msg) return;
+        
+        input.value = '';
+        
+        const historyContainer = document.getElementById('oracle-chat-history');
+        
+        // Add user message
+        const userDiv = document.createElement('div');
+        userDiv.className = 'chat-msg chat-user slide-up';
+        userDiv.textContent = msg;
+        historyContainer.appendChild(userDiv);
+        historyContainer.scrollTop = historyContainer.scrollHeight;
+        
+        // Create oracle placeholder
+        const oracleDiv = document.createElement('div');
+        oracleDiv.className = 'chat-msg chat-oracle';
+        oracleDiv.innerHTML = '<span class="loading-dots">Consulting the ether...</span>';
+        historyContainer.appendChild(oracleDiv);
+        historyContainer.scrollTop = historyContainer.scrollHeight;
+        
+        try {
+            const res = await fetch('/api/deep_insights/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: msg, history: chatHistory })
+            });
+            
+            chatHistory.push({ role: "user", parts: [{ text: msg }] });
+            
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            oracleDiv.innerHTML = '';
+            
+            let oracleReply = "";
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value, { stream: true });
+                oracleReply += chunk;
+                if(window.marked) {
+                    oracleDiv.innerHTML = marked.parse(oracleReply);
+                } else {
+                    oracleDiv.textContent = oracleReply;
+                }
+                historyContainer.scrollTop = historyContainer.scrollHeight;
+            }
+            
+            // Flush any remaining buffered bytes from the TextDecoder.
+            // When using { stream: true }, the decoder can hold back trailing
+            // multi-byte characters. This final call releases them.
+            const remaining = decoder.decode();
+            if (remaining) {
+                oracleReply += remaining;
+                if(window.marked) {
+                    oracleDiv.innerHTML = marked.parse(oracleReply);
+                } else {
+                    oracleDiv.textContent = oracleReply;
+                }
+            }
+            
+            chatHistory.push({ role: "model", parts: [{ text: oracleReply }] });
+            
+        } catch(e) {
+            oracleDiv.textContent = "The connection to the ether was lost... " + e.message;
+        }
+    }
+
+});
+// Check AniList Auth Status
+fetch('/api/auth/anilist/status')
+    .then(res => res.json())
+    .then(data => {
+        if (data.authenticated) {
+            const btn = document.getElementById('anilist-login-btn');
+            if (btn) {
+                btn.textContent = '? AniList Linked';
+                btn.href = '#';
+                btn.style.pointerEvents = 'none';
+                btn.style.opacity = '0.7';
+            }
+        }
+    })
+    .catch(console.error);
+
+// Check if we just logged in
+if (window.location.search.includes('auth=success')) {
+    window.history.replaceState({}, document.title, window.location.pathname);
+    setTimeout(() => {
+        if (typeof showToast === 'function') {
+            showToast("Successfully linked with AniList!");
+        }
+    }, 500);
+}

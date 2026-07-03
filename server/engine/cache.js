@@ -20,39 +20,22 @@ const cache = {
     }
 };
 
+function invalidateKeys(domain, keys) {
+    ['movie', 'anime'].filter(d => domain === d || domain === 'all').forEach(d => {
+        keys.forEach(k => cache[d][k] = null);
+    });
+}
+
 function invalidateCache(domain = 'movie') {
-    if (domain === 'movie' || domain === 'all') {
-        cache.movie.vocab = null;
-        cache.movie.profileVec = null;
-        cache.movie.denseProfileVec = null;
-        cache.movie.watchedIds = null;
-        cache.movie.insightsResult = null;
-    }
-    if (domain === 'anime' || domain === 'all') {
-        cache.anime.vocab = null;
-        cache.anime.profileVec = null;
-        cache.anime.denseProfileVec = null;
-        cache.anime.watchedIds = null;
-        cache.anime.insightsResult = null;
-    }
+    invalidateKeys(domain, ['vocab', 'profileVec', 'denseProfileVec', 'watchedIds', 'insightsResult']);
 }
 
 function invalidateWatchlist(domain = 'movie') {
-    if (domain === 'movie' || domain === 'all') {
-        cache.movie.watchlistIds = null;
-    }
-    if (domain === 'anime' || domain === 'all') {
-        cache.anime.watchlistIds = null;
-    }
+    invalidateKeys(domain, ['watchlistIds']);
 }
 
 function invalidateGenreIDF(domain = 'movie') {
-    if (domain === 'movie' || domain === 'all') {
-        cache.movie.genreIDF = null;
-    }
-    if (domain === 'anime' || domain === 'all') {
-        cache.anime.genreIDF = null;
-    }
+    invalidateKeys(domain, ['genreIDF']);
 }
 
 function getCache(domain) {

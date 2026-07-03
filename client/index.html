@@ -29,6 +29,9 @@
             </ul>
             <div class="sidebar-footer">
                 All data stored locally.<br>No cloud. No tracking.
+                <div id="anilist-auth-container" style="margin-top: 1rem;">
+                    <a href="/api/auth/anilist" id="anilist-login-btn" class="secondary-btn" style="display:block; text-align:center; padding: 0.4rem; font-size: 0.8rem; text-decoration: none;">🔗 Link AniList</a>
+                </div>
             </div>
         </nav>
 
@@ -244,11 +247,76 @@
 
             <!-- View: Insights -->
             <section id="view-insights" class="view-section">
-                <header class="section-header">
+                <header class="section-header" style="flex-direction: column; align-items: flex-start; gap: 1rem;">
                     <h2>Taste Insights</h2>
+                    <div class="insight-tabs">
+                        <button class="insight-tab-btn active" data-tab="dashboard">Dashboard</button>
+                        <button class="insight-tab-btn" data-tab="oracle">Deep Insights (Oracle)</button>
+                    </div>
                 </header>
-                <div id="insights-content">
-                    <p style="color: var(--text-secondary);">Click this tab to analyze your taste...</p>
+                
+                <div id="insight-tab-dashboard" class="insight-tab-content active">
+                    <div id="insights-content">
+                        <p style="color: var(--text-secondary);">Click this tab to analyze your taste...</p>
+                    </div>
+                </div>
+
+                <div id="insight-tab-oracle" class="insight-tab-content oracle-den" style="display: none;">
+                    
+                    <div class="oracle-profile-panel glass-panel">
+                        <h3 style="margin-top:0; color: var(--accent-gold, #C9A96E);">Oracle Intake</h3>
+                        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+                            <input type="text" id="oracle-name" placeholder="Your Name" class="glass-input">
+                            <select id="oracle-vedic" class="glass-input">
+                                <option value="">Vedic Rashi (Moon Sign)</option>
+                                <option value="Mesha (Aries)">Mesha (Aries)</option>
+                                <option value="Vrishabha (Taurus)">Vrishabha (Taurus)</option>
+                                <option value="Mithuna (Gemini)">Mithuna (Gemini)</option>
+                                <option value="Karka (Cancer)">Karka (Cancer)</option>
+                                <option value="Simha (Leo)">Simha (Leo)</option>
+                                <option value="Kanya (Virgo)">Kanya (Virgo)</option>
+                                <option value="Tula (Libra)">Tula (Libra)</option>
+                                <option value="Vrischika (Scorpio)">Vrischika (Scorpio)</option>
+                                <option value="Dhanu (Sagittarius)">Dhanu (Sagittarius)</option>
+                                <option value="Makara (Capricorn)">Makara (Capricorn)</option>
+                                <option value="Kumbha (Aquarius)">Kumbha (Aquarius)</option>
+                                <option value="Meena (Pisces)">Meena (Pisces)</option>
+                            </select>
+                            <select id="oracle-chinese" class="glass-input">
+                                <option value="">Chinese Zodiac</option>
+                                <option value="Rat">Rat</option>
+                                <option value="Ox">Ox</option>
+                                <option value="Tiger">Tiger</option>
+                                <option value="Rabbit">Rabbit</option>
+                                <option value="Dragon">Dragon</option>
+                                <option value="Snake">Snake</option>
+                                <option value="Horse">Horse</option>
+                                <option value="Sheep/Goat">Sheep/Goat</option>
+                                <option value="Monkey">Monkey</option>
+                                <option value="Rooster">Rooster</option>
+                                <option value="Dog">Dog</option>
+                                <option value="Pig">Pig</option>
+                            </select>
+                        </div>
+                        <button id="btn-save-oracle-profile" class="btn-oracle" style="margin-top: 1rem; padding: 0.5rem 1.5rem; font-size: 1rem;">Save Profile</button>
+                    </div>
+
+                    <div style="text-align: center; margin: 2rem 0;">
+                        <button id="btn-generate-reading" class="btn-primary btn-oracle">🔮 Consult the Oracle</button>
+                    </div>
+
+                    <div id="oracle-reading-container" class="hidden">
+                        <div id="oracle-reading-content" class="oracle-reading-text"></div>
+                        
+                        <div class="oracle-chat-container">
+                            <div id="oracle-chat-history" class="chat-history"></div>
+                            <div class="chat-input-area" style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+                                <input type="text" id="oracle-chat-input" placeholder="Ask the Oracle a question..." class="glass-input" style="flex: 1;">
+                                <button id="btn-send-chat" class="btn-oracle" style="padding: 0.5rem 1.5rem; font-size: 1rem;">Send</button>
+                            </div>
+                        </div>
+                    </div>
+
                 </div>
             </section>
 
@@ -398,6 +466,7 @@
     <script src="js/api.js"></script>
     <script src="js/rater.js"></script>
     <script src="js/ui.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

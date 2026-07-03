@@ -1,41 +1,38 @@
-const { normalizeL2, vectorizeMovie } = require('./vectorize');
-const { vectorizeAnime } = require('./vectorize_anime');
+const { normalizeL2, vectorizeMovie, vectorizeAnime } = require('./vectorize');
 const animeDb = require('../db/anime_db');
 const { getCache } = require('./cache');
 
-function getTasteProfile(db, vocab) {
-    const cache = getCache('movie');
+// Generic Sparse Profile Builder
+function buildSparseProfile(dbConnection, query, franchiseKey, domain, vectorizeFn, vocab) {
+    const cache = getCache(domain);
     if (cache.profileVec) return cache.profileVec;
 
-    const allWatched = db.prepare(`
-        SELECT m.*, w.user_rating 
-        FROM watched w 
-        JOIN movies m ON w.tmdb_id = m.tmdb_id
-    `).all();
-
+    const allWatched = dbConnection.prepare(query).all();
     if (allWatched.length === 0) return null;
 
     const franchiseCounts = {};
-    allWatched.forEach(m => {
-        if (m.collection_id) {
-            franchiseCounts[m.collection_id] = (franchiseCounts[m.collection_id] || 0) + 1;
-        }
-    });
+    if (franchiseKey) {
+        allWatched.forEach(item => {
+            if (item[franchiseKey]) {
+                franchiseCounts[item[franchiseKey]] = (franchiseCounts[item[franchiseKey]] || 0) + 1;
+            }
+        });
+    }
 
     let profileVec = null;
 
-    allWatched.forEach(movie => {
-        const watchDate = movie.watch_date ? new Date(movie.watch_date) : new Date();
+    allWatched.forEach(item => {
+        const watchDate = item.watch_date ? new Date(item.watch_date) : new Date();
         const daysSince = (Date.now() - watchDate.getTime()) / (1000 * 60 * 60 * 24);
         const temporalMultiplier = Math.exp(-0.002 * Math.max(0, daysSince));
 
         let franchiseWeight = 1.0;
-        if (movie.collection_id && franchiseCounts[movie.collection_id] > 1) {
-            franchiseWeight = 1.0 / Math.sqrt(franchiseCounts[movie.collection_id]);
+        if (franchiseKey && item[franchiseKey] && franchiseCounts[item[franchiseKey]] > 1) {
+            franchiseWeight = 1.0 / Math.sqrt(franchiseCounts[item[franchiseKey]]);
         }
 
-        const weight = ((movie.user_rating - 5.5) / 4.5) * temporalMultiplier * franchiseWeight;
-        const vec = normalizeL2(vectorizeMovie(movie, vocab));
+        const weight = ((item.user_rating - 5.5) / 4.5) * temporalMultiplier * franchiseWeight;
+        const vec = normalizeL2(vectorizeFn(item, vocab));
         
         if (!profileVec) {
             profileVec = vec.map(v => v * weight);
@@ -50,51 +47,26 @@ function getTasteProfile(db, vocab) {
     return cache.profileVec;
 }
 
+function getTasteProfile(db, vocab) {
+    return buildSparseProfile(
+        db,
+        `SELECT m.*, w.user_rating FROM watched w JOIN movies m ON w.tmdb_id = m.tmdb_id`,
+        'collection_id',
+        'movie',
+        vectorizeMovie,
+        vocab
+    );
+}
+
 function getAnimeTasteProfile(vocab) {
-    const cache = getCache('anime');
-    if (cache.profileVec) return cache.profileVec;
-
-    const allWatched = animeDb.prepare(`
-        SELECT a.*, w.user_rating 
-        FROM watched_anime w 
-        JOIN anime a ON w.anilist_id = a.anilist_id
-    `).all();
-
-    if (allWatched.length === 0) return null;
-
-    const franchiseCounts = {};
-    allWatched.forEach(a => {
-        if (a.franchise_group_id) {
-            franchiseCounts[a.franchise_group_id] = (franchiseCounts[a.franchise_group_id] || 0) + 1;
-        }
-    });
-
-    let profileVec = null;
-
-    allWatched.forEach(anime => {
-        const watchDate = anime.watch_date ? new Date(anime.watch_date) : new Date();
-        const daysSince = (Date.now() - watchDate.getTime()) / (1000 * 60 * 60 * 24);
-        const temporalMultiplier = Math.exp(-0.002 * Math.max(0, daysSince));
-
-        let franchiseWeight = 1.0;
-        if (anime.franchise_group_id && franchiseCounts[anime.franchise_group_id] > 1) {
-            franchiseWeight = 1.0 / Math.sqrt(franchiseCounts[anime.franchise_group_id]);
-        }
-
-        const weight = ((anime.user_rating - 5.5) / 4.5) * temporalMultiplier * franchiseWeight;
-        const vec = normalizeL2(vectorizeAnime(anime, vocab));
-        
-        if (!profileVec) {
-            profileVec = vec.map(v => v * weight);
-        } else {
-            for (let i = 0; i < vec.length; i++) profileVec[i] += (vec[i] * weight);
-        }
-    });
-
-    for (let i = 0; i < profileVec.length; i++) profileVec[i] /= allWatched.length;
-
-    cache.profileVec = normalizeL2(profileVec);
-    return cache.profileVec;
+    return buildSparseProfile(
+        animeDb,
+        `SELECT a.*, w.user_rating FROM watched_anime w JOIN anime a ON w.anilist_id = a.anilist_id`,
+        'franchise_group_id',
+        'anime',
+        vectorizeAnime,
+        vocab
+    );
 }
 
 

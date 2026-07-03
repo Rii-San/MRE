@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
 :root {
     --bg-color: #000000;
     --text-primary: #E1DCC9;
@@ -1022,4 +1023,104 @@ input[type="range"]#discover-depth:active::-webkit-slider-thumb {
 }
 .cat-override-input {
     -moz-appearance: textfield;
+}
+
+/* Oracle's Den Styles */
+
+
+.insight-tabs {
+    display: flex;
+    gap: 1rem;
+    border-bottom: 1px solid var(--glass-border);
+    width: 100%;
+}
+.insight-tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 1.1rem;
+    border-bottom: 2px solid transparent;
+    transition: all 0.3s;
+}
+.insight-tab-btn:hover {
+    color: var(--text-primary);
+}
+.insight-tab-btn.active {
+    color: #C9A96E;
+    border-bottom: 2px solid #C9A96E;
+}
+
+.oracle-den {
+    background: radial-gradient(circle at 50% 0%, rgba(65, 45, 21, 0.4) 0%, rgba(0, 0, 0, 0.8) 100%);
+    padding: 2rem;
+    border-radius: 12px;
+}
+
+.oracle-reading-text h3 {
+    color: #C9A96E;
+    font-family: 'Playfair Display', serif;
+    margin-top: 2rem;
+    border-bottom: 1px solid rgba(201, 169, 110, 0.3);
+    padding-bottom: 0.5rem;
+}
+
+.oracle-reading-text p {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.15rem;
+    line-height: 1.6;
+    color: #E1DCC9;
+}
+
+.btn-oracle {
+    background: linear-gradient(45deg, #412D15, #8B6914);
+    box-shadow: 0 0 15px rgba(201, 169, 110, 0.3);
+    font-size: 1.2rem;
+    padding: 0.8rem 2rem;
+    border-color: #C9A96E;
+    color: #E1DCC9;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.btn-oracle:hover {
+    box-shadow: 0 0 25px rgba(201, 169, 110, 0.6);
+}
+
+.oracle-chat-container {
+    margin-top: 3rem;
+    border-top: 1px solid rgba(201, 169, 110, 0.3);
+    padding-top: 2rem;
+}
+
+.chat-history {
+    max-height: 400px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding-right: 0.5rem;
+}
+
+.chat-msg {
+    padding: 1rem;
+    border-radius: 8px;
+    max-width: 80%;
+}
+
+.chat-user {
+    align-self: flex-end;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+}
+
+.chat-oracle {
+    align-self: flex-start;
+    background: rgba(45, 21, 65, 0.4);
+    border: 1px solid rgba(139, 105, 20, 0.4);
+    font-family: 'Playfair Display', serif;
+    color: #C9A96E;
 }

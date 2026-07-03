@@ -1,154 +1,58 @@
-const { getCache } = require('./cache');
+const { createVectorizer } = require('./vectorizerFactory');
 
-function buildVocab(db) {
-    const cache = getCache('movie');
-    if (cache.vocab) return cache.vocab;
-    const rows = db.prepare(`
+const movieVectorizer = createVectorizer({
+    domain: 'movie',
+    getRowsQuery: `
         SELECT COALESCE(m.primary_genres, m.genres) as active_genres, m.keywords, m.country, m.director, m.top_cast, m.production_companies, m.original_language 
         FROM watched w 
         JOIN movies m ON w.tmdb_id = m.tmdb_id
-    `).all();
+    `,
+    features: [
+        { name: 'genres', column: 'active_genres', type: 'json_array', weight: 1.0, label: 'Genre', valueAccessor: m => m.primary_genres ? m.primary_genres : m.genres },
+        { name: 'keywords', column: 'keywords', type: 'json_array', topN: 100, weight: 1.2, label: 'Tag' },
+        { name: 'countries', column: 'country', type: 'scalar', weight: 0.5, label: 'Country' },
+        { name: 'directors', column: 'director', type: 'scalar', weight: 1.5, label: 'Director' },
+        { name: 'cast', column: 'top_cast', type: 'json_array', topN: 150, weight: 1.0, label: 'Actor' },
+        { name: 'companies', column: 'production_companies', type: 'json_array', topN: 50, weight: 0.8, label: 'Studio' },
+        { name: 'languages', column: 'original_language', type: 'scalar', weight: 1.0, label: 'Language' }
+    ],
+    continuousFeatures: [
+        { name: 'adult', label: 'Adult Content', accessor: m => m.adult ? 1.0 : 0.0 },
+        { name: 'year', label: 'Release Era', accessor: m => (Math.max(1900, Math.min(m.release_year || 2000, 2025)) - 1900) / 125 },
+        { name: 'runtime', label: 'Runtime', accessor: m => Math.max(0, Math.min(m.runtime || 90, 240)) / 240 },
+        { name: 'rating', label: 'TMDB Rating', accessor: m => (m.tmdb_rating || 5) / 10 }
+    ]
+});
 
-    const N = rows.length || 1;
-    const genreCounts = {};
-    const keywordCounts = {};
-    const countryCounts = {};
-    const directorCounts = {};
-    const castCounts = {};
-    const companyCounts = {};
-    const languageCounts = {};
+const animeVectorizer = createVectorizer({
+    domain: 'anime',
+    getRowsQuery: `
+        SELECT COALESCE(a.primary_genres, a.genres) as active_genres, a.tags, a.director, a.studios 
+        FROM watched_anime w 
+        JOIN anime a ON w.anilist_id = a.anilist_id
+    `,
+    features: [
+        { name: 'genres', column: 'active_genres', type: 'json_array', weight: 1.0, label: 'Genre', valueAccessor: a => a.primary_genres ? a.primary_genres : a.genres },
+        { name: 'tags', column: 'tags', type: 'json_array', topN: 150, weight: 1.2, label: 'Tag' },
+        { name: 'directors', column: 'director', type: 'scalar', weight: 1.5, label: 'Director' },
+        { name: 'studios', column: 'studios', type: 'json_array', topN: 50, weight: 0.8, label: 'Studio' }
+    ],
+    continuousFeatures: [
+        { name: 'adult', label: 'Adult Content', accessor: a => a.adult ? 1.0 : 0.0 },
+        { name: 'year', label: 'Release Era', accessor: a => (Math.max(1960, Math.min(a.release_year || 2010, 2025)) - 1960) / 65 },
+        { name: 'episodes', label: 'Episodes', accessor: a => Math.max(1, Math.min(a.episodes || 12, 100)) / 100 },
+        { name: 'rating', label: 'Community Score', accessor: a => (a.average_score || 50) / 100 }
+    ]
+});
 
-    rows.forEach(row => {
-        if (row.active_genres) {
-            JSON.parse(row.active_genres).forEach(g => { genreCounts[g] = (genreCounts[g] || 0) + 1; });
-        }
-        if (row.keywords) {
-            JSON.parse(row.keywords).forEach(k => { keywordCounts[k] = (keywordCounts[k] || 0) + 1; });
-        }
-        if (row.country) {
-            countryCounts[row.country] = (countryCounts[row.country] || 0) + 1;
-        }
-        if (row.director) {
-            directorCounts[row.director] = (directorCounts[row.director] || 0) + 1;
-        }
-        if (row.top_cast) {
-            JSON.parse(row.top_cast).forEach(c => { castCounts[c] = (castCounts[c] || 0) + 1; });
-        }
-        if (row.production_companies) {
-            JSON.parse(row.production_companies).forEach(c => { companyCounts[c] = (companyCounts[c] || 0) + 1; });
-        }
-        if (row.original_language) {
-            languageCounts[row.original_language] = (languageCounts[row.original_language] || 0) + 1;
-        }
-    });
-
-    const topKeywords = Object.entries(keywordCounts).sort((a, b) => b[1] - a[1]).slice(0, 100).map(e => e[0]);
-    const topCast = Object.entries(castCounts).sort((a, b) => b[1] - a[1]).slice(0, 150).map(e => e[0]);
-    const topCompanies = Object.entries(companyCounts).sort((a, b) => b[1] - a[1]).slice(0, 50).map(e => e[0]);
-
-    // Calculate BM25-style IDF weights
-    const idf = { genres: {}, keywords: {}, countries: {}, directors: {}, cast: {}, companies: {}, languages: {} };
+module.exports = { 
+    buildVocab: movieVectorizer.buildVocab, 
+    getFeatureNames: movieVectorizer.getFeatureNames, 
+    normalizeL2: movieVectorizer.normalizeL2, 
+    vectorizeMovie: movieVectorizer.vectorizeItem,
     
-    // BM25 IDF: ln((N - df + 0.5) / (df + 0.5) + 1.0)
-    const calcIDF = (df) => Math.log(((N - df + 0.5) / (df + 0.5)) + 1.0);
-
-    Object.keys(genreCounts).forEach(g => idf.genres[g] = calcIDF(genreCounts[g]));
-    topKeywords.forEach(k => idf.keywords[k] = calcIDF(keywordCounts[k]));
-    Object.keys(countryCounts).forEach(c => idf.countries[c] = calcIDF(countryCounts[c]));
-    Object.keys(directorCounts).forEach(d => idf.directors[d] = calcIDF(directorCounts[d]));
-    topCast.forEach(c => idf.cast[c] = calcIDF(castCounts[c]));
-    topCompanies.forEach(c => idf.companies[c] = calcIDF(companyCounts[c]));
-    Object.keys(languageCounts).forEach(l => idf.languages[l] = calcIDF(languageCounts[l]));
-
-    cache.vocab = {
-        genres: Object.keys(genreCounts).sort(),
-        keywords: topKeywords.sort(),
-        countries: Object.keys(countryCounts).sort(),
-        directors: Object.keys(directorCounts).sort(),
-        cast: topCast.sort(),
-        companies: topCompanies.sort(),
-        languages: Object.keys(languageCounts).sort(),
-        idf
-    };
-    return cache.vocab;
-}
-
-function getFeatureNames(vocab) {
-    const names = [];
-    vocab.genres.forEach(g => names.push(`Genre: ${g}`));
-    vocab.keywords.forEach(k => names.push(`Tag: ${k}`));
-    vocab.countries.forEach(c => names.push(`Country: ${c}`));
-    vocab.directors.forEach(d => names.push(`Director: ${d}`));
-    vocab.cast.forEach(c => names.push(`Actor: ${c}`));
-    vocab.companies.forEach(c => names.push(`Studio: ${c}`));
-    vocab.languages.forEach(l => names.push(`Language: ${l}`));
-    names.push("Adult Content");
-    names.push("Release Era");
-    names.push("Runtime");
-    names.push("TMDB Rating");
-    return names;
-}
-
-function normalizeL2(vec) {
-    const mag = Math.sqrt(vec.reduce((sum, val) => sum + val * val, 0));
-    if (mag === 0) return vec;
-    return vec.map(v => v / mag);
-}
-
-function vectorizeMovie(movie, vocab) {
-    const vec = [];
-    
-    const movieGenres = movie.primary_genres ? JSON.parse(movie.primary_genres) : (movie.genres ? JSON.parse(movie.genres) : []);
-    vocab.genres.forEach(g => {
-        vec.push(movieGenres.includes(g) ? (vocab.idf.genres[g] * 1.0) : 0);
-    });
-
-    const movieKeywords = movie.keywords ? JSON.parse(movie.keywords) : [];
-    vocab.keywords.forEach(k => {
-        vec.push(movieKeywords.includes(k) ? (vocab.idf.keywords[k] * 1.2) : 0);
-    });
-
-    vocab.countries.forEach(c => {
-        vec.push(movie.country === c ? (vocab.idf.countries[c] * 0.5) : 0);
-    });
-
-    // Directors (Auteur Theory Multiplier: 1.5x)
-    vocab.directors.forEach(d => {
-        vec.push(movie.director === d ? (vocab.idf.directors[d] * 1.5) : 0);
-    });
-
-    // Cast (Top Billed Multiplier: 1.0x)
-    const movieCast = movie.top_cast ? JSON.parse(movie.top_cast) : [];
-    vocab.cast.forEach(c => {
-        vec.push(movieCast.includes(c) ? (vocab.idf.cast[c] * 1.0) : 0);
-    });
-
-    // Production Companies (Studio Weight: 0.8x)
-    const movieCompanies = movie.production_companies ? JSON.parse(movie.production_companies) : [];
-    vocab.companies.forEach(c => {
-        vec.push(movieCompanies.includes(c) ? (vocab.idf.companies[c] * 0.8) : 0);
-    });
-
-    // Language
-    vocab.languages.forEach(l => {
-        vec.push(movie.original_language === l ? (vocab.idf.languages[l] * 1.0) : 0);
-    });
-
-    // Adult Flag (Boolean encoded as 1.0 or 0.0)
-    vec.push(movie.adult ? 1.0 : 0.0);
-
-    let year = movie.release_year || 2000;
-    year = Math.max(1900, Math.min(year, 2025));
-    vec.push((year - 1900) / 125);
-
-    let runtime = movie.runtime || 90;
-    runtime = Math.max(0, Math.min(runtime, 240));
-    vec.push(runtime / 240);
-
-    let rating = movie.tmdb_rating || 5;
-    vec.push(rating / 10);
-
-    return vec; // Not normalized yet
-}
-
-module.exports = { buildVocab, getFeatureNames, normalizeL2, vectorizeMovie };
+    buildAnimeVocab: animeVectorizer.buildVocab,
+    getAnimeFeatureNames: animeVectorizer.getFeatureNames,
+    vectorizeAnime: animeVectorizer.vectorizeItem,
+    normalizeAnime: animeVectorizer.normalizeL2
+};

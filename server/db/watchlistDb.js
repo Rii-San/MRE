@@ -1,17 +1,6 @@
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
+const { createDatabase } = require('./dbFactory');
 
-// Ensure data directory exists
-const dataDir = path.join(__dirname, '../../data');
-if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-}
-
-const dbPath = path.join(dataDir, 'movie_watchlist.db');
-const db = new Database(dbPath, { verbose: console.log });
-
-function initDb() {
+const db = createDatabase('movie_watchlist.db', (db) => {
     db.exec(`
         CREATE TABLE IF NOT EXISTS watchlist (
             tmdb_id INTEGER PRIMARY KEY,
@@ -21,10 +10,6 @@ function initDb() {
             added_date TEXT NOT NULL
         );
     `);
-    
-    console.log("Watchlist database initialized successfully.");
-}
-
-initDb();
+});
 
 module.exports = db;

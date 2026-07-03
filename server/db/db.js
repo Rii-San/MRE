@@ -1,18 +1,6 @@
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
+const { createDatabase, safeAddColumn } = require('./dbFactory');
 
-// Ensure data directory exists
-const dataDir = path.join(__dirname, '../../data');
-if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-}
-
-const dbPath = path.join(dataDir, 'movie.db');
-const db = new Database(dbPath, { verbose: console.log });
-
-function initDb() {
-    // Create movies table (local cache of TMDB data)
+const db = createDatabase('movie.db', (db) => {
     db.exec(`
         CREATE TABLE IF NOT EXISTS movies (
             tmdb_id INTEGER PRIMARY KEY,
@@ -25,46 +13,24 @@ function initDb() {
             tmdb_rating REAL,
             tmdb_votes INTEGER,
             overview TEXT,
-            plot_embedding TEXT
+            plot_embedding TEXT,
+            last_updated TEXT
         );
     `);
 
-    // Schema upgrades for existing databases
-    try {
-        db.exec("ALTER TABLE movies ADD COLUMN overview TEXT;");
-    } catch (e) { /* Column already exists */ }
-    try {
-        db.exec("ALTER TABLE movies ADD COLUMN plot_embedding TEXT;");
-    } catch (e) { /* Column already exists */ }
-    try {
-        db.exec("ALTER TABLE movies ADD COLUMN director TEXT;");
-    } catch (e) { /* Column already exists */ }
-    try {
-        db.exec("ALTER TABLE movies ADD COLUMN top_cast TEXT;");
-    } catch (e) { /* Column already exists */ }
-    try {
-        db.exec("ALTER TABLE movies ADD COLUMN production_companies TEXT;");
-    } catch (e) { /* Column already exists */ }
-    try {
-        db.exec("ALTER TABLE movies ADD COLUMN original_language TEXT;");
-    } catch (e) { /* Column already exists */ }
-    try {
-        db.exec("ALTER TABLE movies ADD COLUMN adult BOOLEAN;");
-    } catch (e) { /* Column already exists */ }
-    try {
-        db.exec("ALTER TABLE movies ADD COLUMN poster_path TEXT;");
-    } catch (e) { /* Column already exists */ }
-    try {
-        db.exec("ALTER TABLE movies ADD COLUMN collection_id INTEGER;");
-    } catch (e) { /* Column already exists */ }
-    try {
-        db.exec("ALTER TABLE movies ADD COLUMN collection_name TEXT;");
-    } catch (e) { /* Column already exists */ }
-    try {
-        db.exec("ALTER TABLE movies ADD COLUMN primary_genres TEXT;");
-    } catch (e) { /* Column already exists */ }
+    safeAddColumn(db, 'movies', 'overview', 'TEXT');
+    safeAddColumn(db, 'movies', 'plot_embedding', 'TEXT');
+    safeAddColumn(db, 'movies', 'director', 'TEXT');
+    safeAddColumn(db, 'movies', 'top_cast', 'TEXT');
+    safeAddColumn(db, 'movies', 'production_companies', 'TEXT');
+    safeAddColumn(db, 'movies', 'original_language', 'TEXT');
+    safeAddColumn(db, 'movies', 'adult', 'BOOLEAN');
+    safeAddColumn(db, 'movies', 'poster_path', 'TEXT');
+    safeAddColumn(db, 'movies', 'collection_id', 'INTEGER');
+    safeAddColumn(db, 'movies', 'collection_name', 'TEXT');
+    safeAddColumn(db, 'movies', 'primary_genres', 'TEXT');
+    safeAddColumn(db, 'movies', 'last_updated', 'TEXT');
 
-    // Create watched table (personal log)
     db.exec(`
         CREATE TABLE IF NOT EXISTS watched (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,10 +44,6 @@ function initDb() {
             FOREIGN KEY (tmdb_id) REFERENCES movies(tmdb_id)
         );
     `);
-    
-    console.log("Database initialized successfully.");
-}
-
-initDb();
+});
 
 module.exports = db;

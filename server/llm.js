@@ -1,5 +1,7 @@
 const path = require("path");
 const fs = require('fs');
+const logger = require('./utils/logger');
+const { embeddingCache } = require('./utils/lru');
 
 let llama = null;
 let model = null;
@@ -11,12 +13,12 @@ async function initModel() {
     
     // Check if the file exists to avoid crashing if the user hasn't downloaded it yet
     if (!fs.existsSync(modelPath)) {
-        console.warn("⚠️ Native Model Missing: Please place 'nomic-embed-text-v1.5.Q8_0.gguf' in the models/ folder.");
+        logger.warn("⚠️ Native Model Missing: Please place 'nomic-embed-text-v1.5.Q8_0.gguf' in the models/ folder.", 'LLM');
         return;
     }
 
     try {
-        console.log("Loading native embedding model into VRAM...");
+        logger.info("Loading native embedding model into VRAM...", 'LLM');
         // Use dynamic import because node-llama-cpp is an ESM module
         const { getLlama } = await import("node-llama-cpp");
         llama = await getLlama();
@@ -25,9 +27,9 @@ async function initModel() {
             gpuLayers: "max" // Fully offloads to the RTX 3060
         });
         context = await model.createEmbeddingContext();
-        console.log("✅ Nomic Embedding model successfully loaded natively into VRAM.");
+        logger.info("✅ Nomic Embedding model successfully loaded natively into VRAM.", 'LLM');
     } catch (e) {
-        console.error("❌ Failed to load native embedding model:", e);
+        logger.error(`❌ Failed to load native embedding model: ${e.message}`, 'LLM');
     }
 }
 
@@ -36,16 +38,20 @@ initModel();
 
 async function getEmbedding(text) {
     if (!text || !context) {
-        if (!context) console.warn("Cannot generate embedding: model is not loaded.");
+        if (!context) logger.warn("Cannot generate embedding: model is not loaded.", 'LLM');
         return null;
     }
     
+    const cached = embeddingCache.get(text);
+    if (cached) return cached;
+
     try {
         // Generate embedding natively
         const embedding = await context.getEmbeddingFor(text);
+        embeddingCache.set(text, embedding.vector);
         return embedding.vector; // Returns the float array
     } catch (e) {
-        console.error("Native embedding generation failed:", e);
+        logger.error(`Native embedding generation failed: ${e.message}`, 'LLM');
         return null;
     }
 }

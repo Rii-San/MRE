@@ -36,6 +36,16 @@ function selectPrimaryGenres(allGenres, genreIDF = {}, maxGenres = 2) {
 }
 
 /**
+ * Generic BM25-style IDF formula.
+ * @param {number} N - Total number of documents
+ * @param {number} df - Document frequency (number of documents containing the term)
+ * @returns {number} IDF weight
+ */
+function calcBM25IDF(N, df) {
+    return Math.log(((N - df + 0.5) / (df + 0.5)) + 1.0);
+}
+
+/**
  * Computes a simple IDF map from an array of genre arrays.
  * Used during sync when the full vocab isn't available.
  * @param {string[][]} allGenreArrays - Array of genre arrays from all movies
@@ -53,12 +63,11 @@ function computeGenreIDF(allGenreArrays) {
     });
 
     const idf = {};
-    // BM25-style IDF: ln((N - df + 0.5) / (df + 0.5) + 1.0)
     Object.keys(genreCounts).forEach(g => {
-        idf[g] = Math.log(((N - genreCounts[g] + 0.5) / (genreCounts[g] + 0.5)) + 1.0);
+        idf[g] = calcBM25IDF(N, genreCounts[g]);
     });
 
     return idf;
 }
 
-module.exports = { selectPrimaryGenres, computeGenreIDF };
+module.exports = { selectPrimaryGenres, computeGenreIDF, calcBM25IDF };

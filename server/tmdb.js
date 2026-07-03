@@ -2,14 +2,45 @@ const db = require('./db/db');
 const { getEmbedding } = require('./llm');
 const { selectPrimaryGenres, computeGenreIDF } = require('./engine/genre_utils');
 const { getCache, invalidateGenreIDF } = require('./engine/cache');
+const logger = require('./utils/logger');
 
+async function fetchWikipediaPlot(title, year) {
+    try {
+        // Use the Wikipedia Search API instead of exact title matching to guarantee we find the film
+        const queryTitle = year ? `${title} ${year} film` : `${title} film`;
+        const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(queryTitle)}&utf8=&format=json&origin=*`;
+        const searchRes = await fetch(searchUrl);
+        const searchData = await searchRes.json();
+        
+        if (searchData.query && searchData.query.search && searchData.query.search.length > 0) {
+            // Take the top search result page ID
+            const pageId = searchData.query.search[0].pageid;
+            
+            const extractUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro&pageids=${pageId}&format=json&origin=*`;
+            const extractRes = await fetch(extractUrl);
+            const extractData = await extractRes.json();
+            
+            if (extractData.query?.pages && extractData.query.pages[pageId]?.extract) {
+                return extractData.query.pages[pageId].extract.replace(/<[^>]*>?/gm, '');
+            }
+        }
+    } catch (e) {
+        logger.warn(`Failed to fetch Wikipedia plot for ${title}: ${e.message}`, 'Wikipedia');
+    }
+    return null;
+}
 async function fetchWithRetry(url, retries = 5) {
     for (let i = 0; i < retries; i++) {
         try {
-            const res = await fetch(url);
+            const res = await fetch(url, {
+                headers: {
+                    'Accept': 'application/json',
+                    'User-Agent': 'MRE-App/1.0'
+                }
+            });
             if (res.status === 429) {
                 // TMDB rate limit hit — back off for 2 seconds before retrying
-                console.warn(`[TMDB] 429 Rate Limit hit, backing off... (attempt ${i + 1})`);
+                logger.warn(`429 Rate Limit hit, backing off... (attempt ${i + 1})`, 'TMDB');
                 await new Promise(r => setTimeout(r, 2000 * (i + 1)));
                 continue;
             }
@@ -67,19 +98,22 @@ async function fetchAndCacheMovie(tmdb_id) {
     }
     const primary_genres = JSON.stringify(selectPrimaryGenres(genreNames, genreIDF, 2));
 
-    // Fetch dense semantic embedding from LM Studio
+    // Fetch dense semantic embedding from LM Studio using Wikipedia plot (Compliance Swap)
     let plot_embedding = null;
-    if (overview) {
-        const embedArr = await getEmbedding(overview);
+    const wikiPlot = await fetchWikipediaPlot(title, release_year);
+    if (wikiPlot) {
+        const embedArr = await getEmbedding(wikiPlot);
         if (embedArr) {
             plot_embedding = JSON.stringify(embedArr);
         }
+    } else {
+        logger.warn(`No Wikipedia plot found for ${title} (${release_year}), no embedding generated.`, 'Wikipedia');
     }
 
     // Insert into DB
     const stmt = db.prepare(`
-        INSERT OR REPLACE INTO movies (tmdb_id, title, release_year, runtime, country, genres, keywords, tmdb_rating, tmdb_votes, overview, plot_embedding, director, top_cast, production_companies, original_language, adult, poster_path, collection_id, collection_name, primary_genres)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO movies (tmdb_id, title, release_year, runtime, country, genres, keywords, tmdb_rating, tmdb_votes, overview, plot_embedding, director, top_cast, production_companies, original_language, adult, poster_path, collection_id, collection_name, primary_genres, last_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `);
     
     stmt.run(tmdb_id, title, release_year, runtime, country, genres, keywords, tmdb_rating, tmdb_votes, overview, plot_embedding, director, top_cast, production_companies, original_language, adult, poster_path, collection_id, collection_name, primary_genres);
@@ -88,4 +122,4 @@ async function fetchAndCacheMovie(tmdb_id) {
     return { tmdb_rating, title, release_year, runtime, country, genres, keywords, tmdb_votes, overview, plot_embedding, director, top_cast, production_companies, original_language, adult, collection_id, collection_name, primary_genres };
 }
 
-module.exports = { fetchWithRetry, fetchAndCacheMovie };
+module.exports = { fetchWithRetry, fetchAndCacheMovie, fetchWikipediaPlot };

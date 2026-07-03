@@ -1,7 +1,8 @@
 const db = require('./db/anime_db');
 const { getEmbedding } = require('./llm');
+const logger = require('./utils/logger');
 const { selectPrimaryGenres, computeGenreIDF } = require('./engine/genre_utils');
-const { getCache, invalidateGenreIDF } = require('./engine/cache');
+const { getCache, invalidateGenreIDF, invalidateCache } = require('./engine/cache');
 
 const ANILIST_API_URL = 'https://graphql.anilist.co';
 
@@ -27,6 +28,7 @@ async function fetchWithAniListRetry(query, variables, retries = 3) {
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
+                    'User-Agent': 'MRE-App/1.0'
                 },
                 body: JSON.stringify({ query, variables })
             });
@@ -37,14 +39,14 @@ async function fetchWithAniListRetry(query, variables, retries = 3) {
             // Check rate limits from headers
             const remaining = parseInt(response.headers.get('x-ratelimit-remaining') || '90');
             if (remaining < 5) {
-                console.log(`[AniList] Approaching rate limit (${remaining} left). Pausing globally for 5 seconds...`);
+                logger.warn(`Approaching rate limit (${remaining} left). Pausing globally for 5 seconds...`, 'AniList');
                 // Append a 5 second penalty to the global queue
                 aniListQueuePromise = aniListQueuePromise.then(() => delay(5000));
             }
 
             if (response.status === 429) {
                 const retryAfter = parseInt(response.headers.get('retry-after') || '60');
-                console.warn(`[AniList] 429 Rate Limited! Sleeping globally for ${retryAfter} seconds...`);
+                logger.warn(`429 Rate Limited! Sleeping globally for ${retryAfter} seconds...`, 'AniList');
                 // Append the rate limit penalty to the global queue
                 aniListQueuePromise = aniListQueuePromise.then(() => delay(retryAfter * 1000));
                 continue; // retry
@@ -60,7 +62,7 @@ async function fetchWithAniListRetry(query, variables, retries = 3) {
             // Ensure the queue is released even if the fetch throws a network error
             if (typeof releaseNext === 'function') releaseNext();
             
-            console.error(`[AniList] Fetch error: ${error.message}`);
+            logger.error(`Fetch error: ${error.message}`, 'AniList');
             if (i === retries - 1) throw error;
             await delay(2000 * (i + 1));
         }
@@ -188,4 +190,160 @@ async function fetchAndCacheAnime(anilist_id) {
     return { anilist_id, title_english, title_romaji, release_year, genres, average_score, description, cover_image, franchise_group_id, primary_genres };
 }
 
-module.exports = { fetchWithAniListRetry, fetchAndCacheAnime };
+async function mutateWithAniListOAuth(query, variables, token, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+        await aniListQueuePromise;
+        let releaseNext;
+        aniListQueuePromise = new Promise(resolve => { releaseNext = resolve; });
+
+        try {
+            const res = await fetch(ANILIST_API_URL, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'User-Agent': 'MRE-App/1.0'
+                },
+                body: JSON.stringify({ query, variables })
+            });
+
+            setTimeout(releaseNext, 750);
+            
+            const remaining = parseInt(res.headers.get('x-ratelimit-remaining') || '90');
+            if (remaining < 5) aniListQueuePromise = aniListQueuePromise.then(() => delay(5000));
+            
+            if (res.status === 429) {
+                const retryAfter = parseInt(res.headers.get('retry-after') || '60');
+                aniListQueuePromise = aniListQueuePromise.then(() => delay(retryAfter * 1000));
+                continue;
+            }
+
+            if (!res.ok) {
+                const errText = await res.text();
+                throw new Error(`AniList OAuth HTTP Error: ${res.status} - ${errText}`);
+            }
+            return await res.json();
+        } catch (error) {
+            if (typeof releaseNext === 'function') releaseNext();
+            if (i === retries - 1) throw error;
+            await delay(2000 * (i + 1));
+        }
+    }
+}
+
+async function syncRatingToAniList(anilist_id, user_rating, token) {
+    if (!token) return;
+    const SAVE_ENTRY_QUERY = `
+    mutation ($mediaId: Int, $status: MediaListStatus, $scoreRaw: Int) {
+      SaveMediaListEntry (mediaId: $mediaId, status: $status, scoreRaw: $scoreRaw) {
+        id
+        status
+      }
+    }
+    `;
+    const scoreRaw = Math.round(user_rating * 10);
+    try {
+        await mutateWithAniListOAuth(SAVE_ENTRY_QUERY, {
+            mediaId: anilist_id,
+            status: "COMPLETED",
+            scoreRaw: scoreRaw
+        }, token);
+        logger.info(`Synced rating for anime ${anilist_id} to AniList account`, 'AniList');
+    } catch(e) {
+        logger.error(`Failed to sync rating to AniList: ${e.message}`, 'AniList');
+    }
+}
+
+async function syncWatchHistoryFromAniList(token) {
+    if (!token) return;
+    const GET_USER_LIST = `query { Viewer { id } }`;
+    const GET_LIST_ENTRIES = `
+    query ($userId: Int) { 
+      MediaListCollection(userId: $userId, type: ANIME) { 
+        lists { 
+          status
+          entries { 
+            mediaId 
+            score 
+            media {
+              title { english romaji }
+              startDate { year }
+              coverImage { extraLarge }
+            }
+          } 
+        } 
+      } 
+    }`;
+    
+    try {
+        const viewerData = await mutateWithAniListOAuth(GET_USER_LIST, {}, token);
+        if (!viewerData?.data?.Viewer?.id) throw new Error("Could not fetch Viewer ID");
+        const userId = viewerData.data.Viewer.id;
+        
+        const listData = await mutateWithAniListOAuth(GET_LIST_ENTRIES, { userId }, token);
+        const lists = listData?.data?.MediaListCollection?.lists || [];
+        
+        const today = new Date().toISOString().split('T')[0];
+        let importedWatched = 0;
+        let importedWatchlist = 0;
+        
+        const animeWdb = require('./db/anime_watchlistDb');
+        
+        db.transaction(() => {
+            animeWdb.transaction(() => {
+                for (const list of lists) {
+                    const status = list.status;
+                    for (const entry of list.entries) {
+                        const anilist_id = entry.mediaId;
+                        const media = entry.media;
+                        
+                        if (status === 'COMPLETED' || status === 'DROPPED' || status === 'PAUSED') {
+                            let user_rating = entry.score;
+                            // Convert 100-point scale to 10-point scale if necessary
+                            if (user_rating > 10) user_rating = user_rating / 10;
+                            // If AniList has no rating, default to 5 for new entries
+                            if (user_rating === 0) user_rating = 5;
+                            
+                            const existing = db.prepare('SELECT id, user_rating FROM watched_anime WHERE anilist_id = ?').get(anilist_id);
+                            if (existing) {
+                                // CRITICAL: NEVER overwrite a local MRE rating with an AniList unrated (0 -> 5)
+                                // Only update if AniList specifically has a >0 rating and we somehow want to sync it,
+                                // but to be safest to protect the user's MRE data, we just skip overwriting completely.
+                                // MRE local ratings are the source of truth.
+                                if (entry.score === 0 && existing.user_rating > 0) {
+                                    // Two-way sync: If AniList is missing the score but we have it locally, upload it safely!
+                                    syncRatingToAniList(anilist_id, existing.user_rating, token).catch(() => {});
+                                }
+                            } else {
+                                db.prepare('INSERT INTO watched_anime (anilist_id, user_rating, watch_date, notes) VALUES (?, ?, ?, ?)').run(anilist_id, user_rating, today, 'Synced from AniList');
+                                importedWatched++;
+                            }
+                        } else if (status === 'CURRENT' || status === 'PLANNING') {
+                            const existing = animeWdb.prepare('SELECT anilist_id FROM watchlist_anime WHERE anilist_id = ?').get(anilist_id);
+                            if (!existing && media) {
+                                animeWdb.prepare(`INSERT INTO watchlist_anime (anilist_id, title_english, title_romaji, release_year, cover_image, added_date) VALUES (?, ?, ?, ?, ?, ?)`).run(
+                                    anilist_id, 
+                                    media.title?.english || media.title?.romaji, 
+                                    media.title?.romaji || media.title?.english,
+                                    media.startDate?.year || null,
+                                    media.coverImage?.extraLarge || null,
+                                    today
+                                );
+                                importedWatchlist++;
+                            }
+                        }
+                    }
+                }
+            })();
+        })();
+        logger.info(`Successfully synced ${importedWatched} watched and ${importedWatchlist} watchlist anime from AniList profile`, 'AniListSync');
+        const { invalidateCache, invalidateWatchlist } = require('./engine/cache');
+        invalidateCache('anime');
+        invalidateWatchlist('anime');
+    } catch(e) {
+        logger.error(`Failed to pull watch history from AniList: ${e.message}`, 'AniListSync');
+    }
+}
+
+module.exports = { fetchWithAniListRetry, fetchAndCacheAnime, syncRatingToAniList, syncWatchHistoryFromAniList };

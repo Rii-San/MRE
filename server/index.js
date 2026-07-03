@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const db = require('./db/db');
+const logger = require('./utils/logger');
+const requestLogger = require('./middleware/requestLogger');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -9,42 +11,40 @@ const PORT = process.env.PORT || 3000;
 const path = require('path');
 
 app.use(cors());
+app.use(requestLogger);
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../client')));
 
-const watchedRouter = require('./api/movies/watched');
-const moviesRouter = require('./api/movies/search');
-const discoverRouter = require('./api/movies/discover');
-const recommendRouter = require('./api/movies/recommend');
-const insightsRouter = require('./api/movies/insights');
+const discoverRouter = require('./api/discover');
+const searchRouter = require('./api/search');
+const recommendRouter = require('./api/recommend');
+const insightsRouter = require('./api/insights');
+const watchedRouter = require('./api/watched');
+const watchlistRouter = require('./api/watchlist');
+
 const importExportRouter = require('./api/importexport');
-const watchlistRouter = require('./api/movies/watchlist');
+const profileRouter = require('./api/profile');
+const deepInsightsRouter = require('./api/deep_insights');
+const authRouter = require('./api/auth');
 
-const animeWatchedRouter = require('./api/anime/watched');
-const animeWatchlistRouter = require('./api/anime/watchlist');
-const animeInsightsRouter = require('./api/anime/insights');
-const animeDiscoverRouter = require('./api/anime/discover');
-const animeSearchRouter = require('./api/anime/search');
-const animeRecommendRouter = require('./api/anime/recommend');
+// Shared Parameterized Routes
+app.use('/api/:domain/discover', discoverRouter);
+app.use('/api/:domain/search', searchRouter);
+app.use('/api/:domain/recommend', recommendRouter);
+app.use('/api/:domain/insights', insightsRouter);
+app.use('/api/:domain/watched', watchedRouter);
+app.use('/api/:domain/watchlist', watchlistRouter);
 
-app.use('/api/watched', watchedRouter);
-app.use('/api/movies', moviesRouter);
-app.use('/api/discover', discoverRouter);
-app.use('/api/recommend', recommendRouter);
-app.use('/api/insights', insightsRouter);
+// Global / Shared Routes
 app.use('/api/export', importExportRouter);
 app.use('/api/import', importExportRouter); // Same router handles POST
-app.use('/api/watchlist', watchlistRouter);
-
-app.use('/api/anime_watched', animeWatchedRouter);
-app.use('/api/anime_watchlist', animeWatchlistRouter);
-app.use('/api/anime_insights', animeInsightsRouter);
-app.use('/api/anime_discover', animeDiscoverRouter);
-app.use('/api/anime_search', animeSearchRouter);
-app.use('/api/anime_recommend', animeRecommendRouter);
+app.use('/api/profile', profileRouter);
+app.use('/api/deep_insights', deepInsightsRouter);
+app.use('/api/auth', authRouter);
 
 const { startSyncLoop, getSyncStatus } = require('./services/sync');
 const { startAnimeSyncLoop, getAnimeSyncStatus } = require('./services/anime_sync');
+const { checkAndFetchDailyReading } = require('./services/horoscopeService');
 
 // Sync status route
 app.get('/api/sync/status', (req, res) => {
@@ -61,7 +61,8 @@ app.get('/api/health', (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    logger.info(`Server is running on http://localhost:${PORT}`, 'Server');
     startSyncLoop(); // Kick off the background repair job
     startAnimeSyncLoop(); // Kick off anime background repair job
+    checkAndFetchDailyReading(); // Kick off daily horoscope reading
 });

@@ -1,16 +1,6 @@
-const Database = require('better-sqlite3');
-const path = require('path');
-const fs = require('fs');
+const { createDatabase, safeAddColumn } = require('./dbFactory');
 
-const dataDir = path.join(__dirname, '../../data');
-if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-}
-
-const dbPath = path.join(dataDir, 'anime.db');
-const db = new Database(dbPath);
-
-function initDb() {
+const db = createDatabase('anime.db', (db) => {
     db.exec(`
         CREATE TABLE IF NOT EXISTS anime (
             anilist_id INTEGER PRIMARY KEY,
@@ -32,13 +22,8 @@ function initDb() {
         );
     `);
 
-    // Schema upgrades
-    try {
-        db.exec("ALTER TABLE anime ADD COLUMN franchise_group_id INTEGER;");
-    } catch (e) { /* Column already exists */ }
-    try {
-        db.exec("ALTER TABLE anime ADD COLUMN primary_genres TEXT;");
-    } catch (e) { /* Column already exists */ }
+    safeAddColumn(db, 'anime', 'franchise_group_id', 'INTEGER');
+    safeAddColumn(db, 'anime', 'primary_genres', 'TEXT');
 
     db.exec(`
         CREATE TABLE IF NOT EXISTS watched_anime (
@@ -50,8 +35,6 @@ function initDb() {
             FOREIGN KEY (anilist_id) REFERENCES anime(anilist_id)
         );
     `);
-}
-
-initDb();
+});
 
 module.exports = db;

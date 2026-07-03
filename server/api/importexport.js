@@ -1,9 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/db');
-const animeDb = require('../db/anime_db');
-const wdb = require('../db/watchlistDb');
-const awdb = require('../db/anime_watchlistDb');
+
 const { fetchAndCacheMovie } = require('../tmdb');
 const { invalidateCache } = require('../engine/cache');
 
