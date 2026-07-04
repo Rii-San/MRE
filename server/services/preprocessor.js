@@ -78,12 +78,17 @@ function formatTasteProfile(profileVec, featureNames) {
 }
 
 function cosineDist(v1, v2) {
-    let dot = 0;
-    for(let i=0; i<v1.length; i++) dot += v1[i]*v2[i];
-    return 1 - dot;
+    let dot = 0, norm1 = 0, norm2 = 0;
+    for(let i=0; i<v1.length; i++) {
+        dot += v1[i]*v2[i];
+        norm1 += v1[i]*v1[i];
+        norm2 += v2[i]*v2[i];
+    }
+    if (norm1 === 0 || norm2 === 0) return 1;
+    return 1 - (dot / (Math.sqrt(norm1) * Math.sqrt(norm2)));
 }
 
-function dbscan(items, eps = 0.45, minPts = 3) {
+function dbscan(items, eps = 0.32, minPts = 3) {
     const C = [];
     const noise = [];
     const visited = new Set();
@@ -139,9 +144,9 @@ function dbscan(items, eps = 0.45, minPts = 3) {
     };
 }
 
-function getMedoid(clusterItems) {
-    if (clusterItems.length === 0) return null;
-    if (clusterItems.length === 1) return clusterItems[0];
+function getClusterRepresentatives(clusterItems, count = 3) {
+    if (clusterItems.length === 0) return [];
+    if (clusterItems.length <= count) return [...clusterItems];
     
     const centroid = new Array(clusterItems[0].vec.length).fill(0);
     for(let item of clusterItems) {
@@ -151,14 +156,33 @@ function getMedoid(clusterItems) {
     
     let best = null;
     let minDist = Infinity;
-    for(let item of clusterItems) {
-        const d = cosineDist(item.vec, centroid);
+    let medoidIdx = -1;
+    for(let i=0; i<clusterItems.length; i++) {
+        const d = cosineDist(clusterItems[i].vec, centroid);
         if (d < minDist) {
             minDist = d;
-            best = item;
+            best = clusterItems[i];
+            medoidIdx = i;
         }
     }
-    return best;
+    
+    const reps = [best];
+    const available = [];
+    for(let i=0; i<clusterItems.length; i++) {
+        if (i !== medoidIdx) available.push(clusterItems[i]);
+    }
+    
+    // Fisher-Yates shuffle
+    for(let i = available.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [available[i], available[j]] = [available[j], available[i]];
+    }
+    
+    for(let i=0; i < Math.min(count - 1, available.length); i++) {
+        reps.push(available[i]);
+    }
+    
+    return reps;
 }
 
 function extractCorePlots(allWatched, isAnime) {
@@ -183,12 +207,13 @@ function extractCorePlots(allWatched, isAnime) {
     const likedItems = prepareItems(r => r >= 8.0);
     const dislikedItems = prepareItems(r => r <= 4.0);
 
+    const targetEps = isAnime ? 0.25 : 0.32;
     const processSet = (items) => {
         if (items.length === 0) return { medoids: [], outliers: [] };
         if (items.length < 5) return { medoids: items.map(i => i.desc), outliers: [] };
         
-        const res = dbscan(items, 0.45, 3);
-        const medoids = res.clusters.map(c => getMedoid(c)).filter(m => m).map(m => m.desc);
+        const res = dbscan(items, targetEps, 3);
+        const medoids = res.clusters.flatMap(c => getClusterRepresentatives(c)).map(m => m.desc);
         
         // If DBSCAN found no clusters (too sparse), fallback to top 3 items
         if (medoids.length === 0) {
@@ -209,7 +234,7 @@ function extractCorePlots(allWatched, isAnime) {
     let outlierText = null;
     
     if (likedItems.length >= 5) {
-        const res = dbscan(likedItems, 0.45, 3);
+        const res = dbscan(likedItems, targetEps, 3);
         if (res.outliers.length > 0) {
             const out = res.outliers[0];
             const title = out[outlierTitleKey] || out[fallbackTitleKey];
@@ -373,8 +398,9 @@ function getMedoidSeedIds(dbConnection, isAnime) {
     
     if (items.length < 5) return items.sort((a,b) => b.user_rating - a.user_rating).slice(0, 10).map(i => i.id);
     
-    const res = dbscan(items, 0.45, 3);
-    const medoids = res.clusters.map(c => getMedoid(c)).filter(m => m).map(m => m.id);
+    const targetEps = isAnime ? 0.25 : 0.32;
+    const res = dbscan(items, targetEps, 3);
+    const medoids = res.clusters.flatMap(c => getClusterRepresentatives(c)).map(m => m.id);
     
     if (medoids.length === 0) return items.sort((a,b) => b.user_rating - a.user_rating).slice(0, 10).map(i => i.id);
     

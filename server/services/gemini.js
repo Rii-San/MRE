@@ -58,8 +58,15 @@ async function executeWithFallback(operationBuilder, retries = 3) {
         } catch (error) {
             const is503 = error.status === 503 || (error.message && error.message.includes('503'));
             const is429 = error.status === 429 || (error.message && error.message.includes('429'));
+            const is404 = error.status === 404 || (error.message && error.message.includes('404'));
             
-            if (is429) {
+            if (is404) {
+                logger.warn(`404 Not Found for model: ${selectedModel}. Marking as exhausted and switching to fallback.`, 'Gemini API');
+                exhaustedDailyModels.add(selectedModel);
+                // Do not consume a retry attempt for a 404 hit, just continue immediately
+                i--;
+                continue;
+            } else if (is429) {
                 // Determine if this is a Quota Exceeded (RPD) or just Rate Limit (RPM)
                 let isQuotaError = false;
                 if (error.message && error.message.toLowerCase().includes('quota exceeded')) {

@@ -25,7 +25,10 @@ npm install
 Create a new file in the root directory named exactly `.env` and add the following lines to it:
 ```env
 PORT=3000
-TMDB_API_KEY=your_api_key_here
+TMDB_API_KEY=your_tmdb_api_key_here
+OMDB_API_KEY=your_omdb_api_key_here
+ANILIST_CLIENT_ID=your_anilist_client_id_here
+ANILIST_CLIENT_SECRET=your_anilist_client_secret_here
 ```
 
 **How to get a TMDB API Key (It's Free!):**
@@ -34,7 +37,18 @@ TMDB_API_KEY=your_api_key_here
 3. Request an API key (choose "Developer" for personal use).
 4. Copy the "API Key (v3 auth)" and paste it into your `.env` file.
 
-*Note: AniList does not require an API key.*
+**How to get an OMDb API Key (It's Free!):**
+1. Go to [OMDb API](http://www.omdbapi.com/apikey.aspx).
+2. Choose the "FREE" tier and enter your email.
+3. Check your email to verify and copy the API key.
+4. Paste it into your `.env` file.
+
+**How to get an AniList OAuth Client ID (For Anime Tracking):**
+1. Go to your [AniList Developer Settings](https://anilist.co/settings/developer).
+2. Click **Create New Client**.
+3. Set the Name to anything (e.g., "MRE App").
+4. **CRITICAL:** Set the **Redirect URL** to `http://localhost:3000/api/auth/anilist/callback`
+5. Save, then copy your newly generated `Client ID` and `Client Secret` into your `.env` file.
 
 ### 3. Download the AI Model
 To understand human language, the app needs an embedding model. 

@@ -78,10 +78,10 @@ router.post('/chat', async (req, res) => {
             return res.status(400).json({ error: 'You need to consult the oracle before you start chatting' });
         }
         
-        // Truncate history to last 5 exchanges (10 messages) to save tokens
+        // Truncate history to last 20 exchanges (40 messages) to maintain a reasonable context size
         let truncatedHistory = history || [];
-        if (truncatedHistory.length > 10) {
-            truncatedHistory = truncatedHistory.slice(truncatedHistory.length - 10);
+        if (truncatedHistory.length > 40) {
+            truncatedHistory = truncatedHistory.slice(truncatedHistory.length - 40);
         }
 
         // Get daily reading for chat context if available

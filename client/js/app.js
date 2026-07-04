@@ -1691,10 +1691,28 @@ fetch('/api/auth/anilist/status')
         if (data.authenticated) {
             const btn = document.getElementById('anilist-login-btn');
             if (btn) {
-                btn.textContent = '? AniList Linked';
+                btn.textContent = '🔄 Sync with AniList';
                 btn.href = '#';
-                btn.style.pointerEvents = 'none';
-                btn.style.opacity = '0.7';
+                btn.style.pointerEvents = 'auto';
+                btn.style.opacity = '1';
+                btn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    if (btn.disabled) return;
+                    btn.textContent = 'Syncing...';
+                    btn.disabled = true;
+                    btn.style.opacity = '0.5';
+                    try {
+                        const res = await fetch('/api/auth/anilist/sync', { method: 'POST' });
+                        if (!res.ok) throw new Error('Failed to trigger sync');
+                        if (typeof showToast === 'function') showToast('✅ Sync started in background!');
+                    } catch (err) {
+                        if (typeof showToast === 'function') showToast('❌ ' + err.message, true);
+                    } finally {
+                        btn.textContent = '🔄 Sync with AniList';
+                        btn.disabled = false;
+                        btn.style.opacity = '1';
+                    }
+                });
             }
         }
     })

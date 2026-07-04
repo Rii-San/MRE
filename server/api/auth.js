@@ -72,4 +72,18 @@ router.get('/anilist/status', (req, res) => {
     res.json({ authenticated: !!profile.anilist_access_token });
 });
 
+// Force AniList Sync
+router.post('/anilist/sync', (req, res) => {
+    const profile = profileService.getProfile();
+    if (!profile.anilist_access_token) {
+        return res.status(401).json({ error: "Not authenticated with AniList" });
+    }
+    
+    syncWatchHistoryFromAniList(profile.anilist_access_token).catch(e => {
+        logger.error("Failed manual AniList sync: " + e.message, "Auth");
+    });
+    
+    res.json({ success: true, message: "Sync started in background" });
+});
+
 module.exports = router;

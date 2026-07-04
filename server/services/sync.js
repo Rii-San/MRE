@@ -1,7 +1,7 @@
 const db = require('../db/db');
 const logger = require('../utils/logger');
 const { getEmbedding } = require('../llm');
-const { fetchWithRetry, fetchWikipediaPlot } = require('../tmdb');
+const { fetchWithRetry, fetchOMDbPlot } = require('../tmdb');
 const { selectPrimaryGenres, computeGenreIDF } = require('../engine/genre_utils');
 const { getCache, invalidateGenreIDF } = require('../engine/cache');
 
@@ -24,12 +24,13 @@ const syncLoop = createSyncLoop({
             if (lastUpdated < thirtyDaysAgo) needsApiFetch = true;
         }
         
-        let wikiPlot = null;
+        let omdbPlot = null;
         if (!m.plot_embedding) {
-             wikiPlot = await fetchWikipediaPlot(m.title, m.release_year);
+             const imdb_id = m.imdb_id || null; // Might need to ensure imdb_id is available or just let it fall back to title/year
+             omdbPlot = await fetchOMDbPlot(imdb_id, m.title, m.release_year);
         }
 
-        if (!needsApiFetch) return wikiPlot;
+        if (!needsApiFetch) return omdbPlot;
 
         try {
             const TMDB_API_KEY = process.env.TMDB_API_KEY;
@@ -65,7 +66,7 @@ const syncLoop = createSyncLoop({
             `).run(overview, director, top_cast, production_companies, original_language, adult, keywords, genres, collection_id, collection_name, primary_genres, m.tmdb_id);
             invalidateGenreIDF('movie');
             
-            return wikiPlot;
+            return omdbPlot;
         } catch (e) {
             logger.warn(`Failed to fetch TMDB API for ${m.title}`, 'Sync');
             return null;

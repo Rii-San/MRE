@@ -93,10 +93,11 @@ async function handleMovieDiscover(req, res) {
     const enrichedCandidates = await Promise.all(random30.map(movie =>
         runWithSemaphore(async () => {
             let keywords = [], director = null, top_cast = [], production_companies = [], genres = [genre];
+            let imdb_id = null;
             try {
                 const cachedTmdb = tmdbCache.get(movie.id);
                 if (cachedTmdb) {
-                    ({ keywords, director, top_cast, production_companies, genres } = cachedTmdb);
+                    ({ keywords, director, top_cast, production_companies, genres, imdb_id } = cachedTmdb);
                     movie.overview = cachedTmdb.overview || movie.overview;
                 } else {
                     const detailsData = await (await fetchWithRetry(`https://api.themoviedb.org/3/movie/${movie.id}?api_key=${TMDB_API_KEY}&append_to_response=credits,keywords`)).json();
@@ -108,16 +109,17 @@ async function handleMovieDiscover(req, res) {
                     if (detailsData.production_companies) production_companies = detailsData.production_companies.map(p => p.name);
                     if (detailsData.genres) genres = detailsData.genres.map(g => g.name);
                     movie.overview = detailsData.overview || movie.overview;
-                    tmdbCache.set(movie.id, { keywords, director, top_cast, production_companies, genres, overview: movie.overview });
+                    imdb_id = detailsData.imdb_id || null;
+                    tmdbCache.set(movie.id, { keywords, director, top_cast, production_companies, genres, overview: movie.overview, imdb_id });
                 }
             } catch (e) {}
 
             let plot_embedding = null;
             try {
-                const { fetchWikipediaPlot } = require('../tmdb');
-                const wikiPlot = await fetchWikipediaPlot(movie.title, movie.release_date ? parseInt(movie.release_date.substring(0, 4)) : null);
-                if (wikiPlot) {
-                    const embedArr = await getEmbedding(wikiPlot);
+                const { fetchOMDbPlot } = require('../tmdb');
+                const omdbPlot = await fetchOMDbPlot(imdb_id, movie.title, movie.release_date ? parseInt(movie.release_date.substring(0, 4)) : null);
+                if (omdbPlot) {
+                    const embedArr = await getEmbedding(omdbPlot);
                     if (embedArr) plot_embedding = JSON.stringify(embedArr);
                 }
             } catch(e) {}

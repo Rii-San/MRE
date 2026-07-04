@@ -257,6 +257,7 @@ async function syncRatingToAniList(anilist_id, user_rating, token) {
 
 async function syncWatchHistoryFromAniList(token) {
     if (!token) return;
+    logger.info('Starting manual AniList watch history master sync...', 'AniListSync');
     const GET_USER_LIST = `query { Viewer { id } }`;
     const GET_LIST_ENTRIES = `
     query ($userId: Int) { 
@@ -264,85 +265,95 @@ async function syncWatchHistoryFromAniList(token) {
         lists { 
           status
           entries { 
+            id
             mediaId 
             score 
-            media {
-              title { english romaji }
-              startDate { year }
-              coverImage { extraLarge }
-            }
           } 
         } 
       } 
     }`;
+    const DELETE_ENTRY = `
+    mutation ($id: Int) {
+      DeleteMediaListEntry(id: $id) { deleted }
+    }`;
+    const SAVE_ENTRY_COMPLETED = `
+    mutation ($mediaId: Int, $status: MediaListStatus, $scoreRaw: Int) {
+      SaveMediaListEntry (mediaId: $mediaId, status: $status, scoreRaw: $scoreRaw) {
+        id
+        status
+      }
+    }`;
+    const SAVE_ENTRY_PLANNING = `
+    mutation ($mediaId: Int, $status: MediaListStatus) {
+      SaveMediaListEntry (mediaId: $mediaId, status: $status) {
+        id
+        status
+      }
+    }`;
     
     try {
+        logger.info('Fetching AniList Viewer ID...', 'AniListSync');
         const viewerData = await mutateWithAniListOAuth(GET_USER_LIST, {}, token);
         if (!viewerData?.data?.Viewer?.id) throw new Error("Could not fetch Viewer ID");
         const userId = viewerData.data.Viewer.id;
         
+        logger.info(`Fetching remote lists for Viewer ID: ${userId}...`, 'AniListSync');
         const listData = await mutateWithAniListOAuth(GET_LIST_ENTRIES, { userId }, token);
         const lists = listData?.data?.MediaListCollection?.lists || [];
         
-        const today = new Date().toISOString().split('T')[0];
-        let importedWatched = 0;
-        let importedWatchlist = 0;
-        
+        logger.info('Loading local database state...', 'AniListSync');
         const animeWdb = require('./db/anime_watchlistDb');
         
-        db.transaction(() => {
-            animeWdb.transaction(() => {
-                for (const list of lists) {
-                    const status = list.status;
-                    for (const entry of list.entries) {
-                        const anilist_id = entry.mediaId;
-                        const media = entry.media;
-                        
-                        if (status === 'COMPLETED' || status === 'DROPPED' || status === 'PAUSED') {
-                            let user_rating = entry.score;
-                            // Convert 100-point scale to 10-point scale if necessary
-                            if (user_rating > 10) user_rating = user_rating / 10;
-                            // If AniList has no rating, default to 5 for new entries
-                            if (user_rating === 0) user_rating = 5;
-                            
-                            const existing = db.prepare('SELECT id, user_rating FROM watched_anime WHERE anilist_id = ?').get(anilist_id);
-                            if (existing) {
-                                // CRITICAL: NEVER overwrite a local MRE rating with an AniList unrated (0 -> 5)
-                                // Only update if AniList specifically has a >0 rating and we somehow want to sync it,
-                                // but to be safest to protect the user's MRE data, we just skip overwriting completely.
-                                // MRE local ratings are the source of truth.
-                                if (entry.score === 0 && existing.user_rating > 0) {
-                                    // Two-way sync: If AniList is missing the score but we have it locally, upload it safely!
-                                    syncRatingToAniList(anilist_id, existing.user_rating, token).catch(() => {});
-                                }
-                            } else {
-                                db.prepare('INSERT INTO watched_anime (anilist_id, user_rating, watch_date, notes) VALUES (?, ?, ?, ?)').run(anilist_id, user_rating, today, 'Synced from AniList');
-                                importedWatched++;
-                            }
-                        } else if (status === 'CURRENT' || status === 'PLANNING') {
-                            const existing = animeWdb.prepare('SELECT anilist_id FROM watchlist_anime WHERE anilist_id = ?').get(anilist_id);
-                            if (!existing && media) {
-                                animeWdb.prepare(`INSERT INTO watchlist_anime (anilist_id, title_english, title_romaji, release_year, cover_image, added_date) VALUES (?, ?, ?, ?, ?, ?)`).run(
-                                    anilist_id, 
-                                    media.title?.english || media.title?.romaji, 
-                                    media.title?.romaji || media.title?.english,
-                                    media.startDate?.year || null,
-                                    media.coverImage?.extraLarge || null,
-                                    today
-                                );
-                                importedWatchlist++;
-                            }
-                        }
-                    }
+        const localWatchedRows = db.prepare('SELECT anilist_id, user_rating FROM watched_anime').all();
+        const localWatchedMap = new Map();
+        localWatchedRows.forEach(r => localWatchedMap.set(r.anilist_id, r.user_rating));
+        
+        const localWatchlistRows = animeWdb.prepare('SELECT anilist_id FROM watchlist_anime').all();
+        const localWatchlistSet = new Set(localWatchlistRows.map(r => r.anilist_id));
+
+        let deletedCount = 0;
+        let updatedCount = 0;
+        const aniListEntries = new Map();
+
+        // 1. Process AniList entries and delete extras not in local DB
+        for (const list of lists) {
+            for (const entry of list.entries) {
+                let s = entry.score;
+                if (s > 10) s = s / 10;
+                
+                aniListEntries.set(entry.mediaId, { id: entry.id, status: list.status, score: s });
+                
+                if (!localWatchedMap.has(entry.mediaId) && !localWatchlistSet.has(entry.mediaId)) {
+                    await mutateWithAniListOAuth(DELETE_ENTRY, { id: entry.id }, token);
+                    deletedCount++;
                 }
-            })();
-        })();
-        logger.info(`Successfully synced ${importedWatched} watched and ${importedWatchlist} watchlist anime from AniList profile`, 'AniListSync');
-        const { invalidateCache, invalidateWatchlist } = require('./engine/cache');
-        invalidateCache('anime');
-        invalidateWatchlist('anime');
+            }
+        }
+        
+        // 2. Push Local Watched (COMPLETED)
+        for (const [mediaId, user_rating] of localWatchedMap.entries()) {
+            const aniListEntry = aniListEntries.get(mediaId);
+            const expectedScore = user_rating;
+            if (!aniListEntry || aniListEntry.status !== 'COMPLETED' || aniListEntry.score !== expectedScore) {
+                await mutateWithAniListOAuth(SAVE_ENTRY_COMPLETED, { mediaId: mediaId, status: "COMPLETED", scoreRaw: Math.round(user_rating * 10) }, token);
+                updatedCount++;
+            }
+        }
+
+        // 3. Push Local Watchlist (PLANNING)
+        for (const mediaId of localWatchlistSet) {
+            const aniListEntry = aniListEntries.get(mediaId);
+            // Allow CURRENT if the user manually set it to watching on AniList, otherwise default to PLANNING
+            if (!aniListEntry || (aniListEntry.status !== 'PLANNING' && aniListEntry.status !== 'CURRENT')) {
+                await mutateWithAniListOAuth(SAVE_ENTRY_PLANNING, { mediaId: mediaId, status: "PLANNING" }, token);
+                updatedCount++;
+            }
+        }
+
+        logger.info(`AniList Master Sync: Pushed local DB to AniList. Updated/Inserted ${updatedCount}, Deleted ${deletedCount}`, 'AniListSync');
+        
     } catch(e) {
-        logger.error(`Failed to pull watch history from AniList: ${e.message}`, 'AniListSync');
+        logger.error(`Failed to push sync to AniList: ${e.message}`, 'AniListSync');
     }
 }
 

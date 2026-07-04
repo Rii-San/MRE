@@ -23,10 +23,11 @@ async function initModel() {
         const { getLlama } = await import("node-llama-cpp");
         llama = await getLlama();
         model = await llama.loadModel({ 
-            modelPath,
-            gpuLayers: "max" // Fully offloads to the RTX 3060
+            modelPath
         });
-        context = await model.createEmbeddingContext();
+        context = await model.createEmbeddingContext({
+            contextSize: 2048
+        });
         logger.info("✅ Nomic Embedding model successfully loaded natively into VRAM.", 'LLM');
     } catch (e) {
         logger.error(`❌ Failed to load native embedding model: ${e.message}`, 'LLM');

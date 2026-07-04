@@ -4,28 +4,36 @@ const { selectPrimaryGenres, computeGenreIDF } = require('./engine/genre_utils')
 const { getCache, invalidateGenreIDF } = require('./engine/cache');
 const logger = require('./utils/logger');
 
-async function fetchWikipediaPlot(title, year) {
+async function fetchOMDbPlot(imdb_id, title, year) {
+    const OMDB_API_KEY = process.env.OMDB_API_KEY;
+    if (!OMDB_API_KEY) {
+        logger.warn('OMDB_API_KEY not set. Cannot fetch OMDb plot.', 'OMDb');
+        return null;
+    }
+
     try {
-        // Use the Wikipedia Search API instead of exact title matching to guarantee we find the film
-        const queryTitle = year ? `${title} ${year} film` : `${title} film`;
-        const searchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(queryTitle)}&utf8=&format=json&origin=*`;
-        const searchRes = await fetch(searchUrl);
-        const searchData = await searchRes.json();
-        
-        if (searchData.query && searchData.query.search && searchData.query.search.length > 0) {
-            // Take the top search result page ID
-            const pageId = searchData.query.search[0].pageid;
-            
-            const extractUrl = `https://en.wikipedia.org/w/api.php?action=query&prop=extracts&exintro&pageids=${pageId}&format=json&origin=*`;
-            const extractRes = await fetch(extractUrl);
-            const extractData = await extractRes.json();
-            
-            if (extractData.query?.pages && extractData.query.pages[pageId]?.extract) {
-                return extractData.query.pages[pageId].extract.replace(/<[^>]*>?/gm, '');
+        let url = `http://www.omdbapi.com/?apikey=${OMDB_API_KEY}&plot=full`;
+        if (imdb_id) {
+            url += `&i=${imdb_id}`;
+        } else {
+            url += `&t=${encodeURIComponent(title)}`;
+            if (year) {
+                url += `&y=${year}`;
             }
         }
+
+        const res = await fetchWithRetry(url);
+        if (!res) return null;
+        
+        const data = await res.json();
+
+        if (data.Response === 'True' && data.Plot && data.Plot !== 'N/A') {
+            return data.Plot;
+        } else {
+            logger.warn(`No OMDb plot found for ${imdb_id || title}: ${data.Error || 'N/A plot'}`, 'OMDb');
+        }
     } catch (e) {
-        logger.warn(`Failed to fetch Wikipedia plot for ${title}: ${e.message}`, 'Wikipedia');
+        logger.warn(`Failed to fetch OMDb plot for ${imdb_id || title}: ${e.message}`, 'OMDb');
     }
     return null;
 }
@@ -81,6 +89,7 @@ async function fetchAndCacheMovie(tmdb_id) {
     const original_language = movieData.original_language || null;
     const adult = movieData.adult ? 1 : 0;
     const poster_path = movieData.poster_path || null;
+    const imdb_id = movieData.imdb_id || null;
 
     // Franchise/Collection tracking
     const collection_id = movieData.belongs_to_collection?.id || null;
@@ -98,16 +107,16 @@ async function fetchAndCacheMovie(tmdb_id) {
     }
     const primary_genres = JSON.stringify(selectPrimaryGenres(genreNames, genreIDF, 2));
 
-    // Fetch dense semantic embedding from LM Studio using Wikipedia plot (Compliance Swap)
+    // Fetch dense semantic embedding from LM Studio using OMDb plot
     let plot_embedding = null;
-    const wikiPlot = await fetchWikipediaPlot(title, release_year);
-    if (wikiPlot) {
-        const embedArr = await getEmbedding(wikiPlot);
+    const omdbPlot = await fetchOMDbPlot(imdb_id, title, release_year);
+    if (omdbPlot) {
+        const embedArr = await getEmbedding(omdbPlot);
         if (embedArr) {
             plot_embedding = JSON.stringify(embedArr);
         }
     } else {
-        logger.warn(`No Wikipedia plot found for ${title} (${release_year}), no embedding generated.`, 'Wikipedia');
+        logger.warn(`No OMDb plot found for ${title} (${release_year}), no embedding generated.`, 'OMDb');
     }
 
     // Insert into DB
@@ -122,4 +131,4 @@ async function fetchAndCacheMovie(tmdb_id) {
     return { tmdb_rating, title, release_year, runtime, country, genres, keywords, tmdb_votes, overview, plot_embedding, director, top_cast, production_companies, original_language, adult, collection_id, collection_name, primary_genres };
 }
 
-module.exports = { fetchWithRetry, fetchAndCacheMovie, fetchWikipediaPlot };
+module.exports = { fetchWithRetry, fetchAndCacheMovie, fetchOMDbPlot };
