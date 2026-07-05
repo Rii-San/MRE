@@ -12,6 +12,13 @@ function loadUIState() {
     }
 }
 
+window.toggleCardDetails = function(detailsId) {
+    const detailsEl = document.getElementById(detailsId);
+    if (detailsEl) {
+        detailsEl.style.display = detailsEl.style.display === 'none' ? 'flex' : 'none';
+    }
+};
+
 function saveUIState() {
     try {
         const state = {
@@ -97,7 +104,7 @@ const domainState = {
                         </div>
                         <div id="predict-explanation" style="margin-top:1.2rem;"></div>
                         <div id="predict-warning" class="hidden" style="margin-top:1rem; padding:1rem; background:rgba(239, 68, 68, 0.1); border-left:4px solid #ef4444; border-radius:4px; font-size:0.9rem; color:#ef4444;"></div>
-        `, predictScoreCardHidden: true, discoverHTML: '<div id="discover-list" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)); gap: 1.5rem; align-items: start;"></div>', discoverHidden: true
+        `, predictScoreCardHidden: true, discoverHTML: '<div id="discover-list" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)); gap: 1.5rem; align-items: start;"></div>', discoverHidden: true, recommendHTML: '<div id="recommend-list" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)); gap: 1.5rem; align-items: start;"></div>', recommendHidden: true
     },
     anime: {
         predictInput: '', predictResultsHTML: '', predictScoreCardHTML: `
@@ -111,7 +118,7 @@ const domainState = {
                         </div>
                         <div id="predict-explanation" style="margin-top:1.2rem;"></div>
                         <div id="predict-warning" class="hidden" style="margin-top:1rem; padding:1rem; background:rgba(239, 68, 68, 0.1); border-left:4px solid #ef4444; border-radius:4px; font-size:0.9rem; color:#ef4444;"></div>
-        `, predictScoreCardHidden: true, discoverHTML: '<div id="discover-list" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)); gap: 1.5rem; align-items: start;"></div>', discoverHidden: true
+        `, predictScoreCardHidden: true, discoverHTML: '<div id="discover-list" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)); gap: 1.5rem; align-items: start;"></div>', discoverHidden: true, recommendHTML: '<div id="recommend-list" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)); gap: 1.5rem; align-items: start;"></div>', recommendHidden: true
     }
 };
 
@@ -123,6 +130,8 @@ function saveDomainState(domain) {
     domainState[domain].predictScoreCardHidden = document.getElementById('predict-score-card').classList.contains('hidden');
     domainState[domain].discoverHTML = document.getElementById('discover-result').innerHTML;
     domainState[domain].discoverHidden = document.getElementById('discover-result').classList.contains('hidden');
+    domainState[domain].recommendHTML = document.getElementById('recommend-result').innerHTML;
+    domainState[domain].recommendHidden = document.getElementById('recommend-result').classList.contains('hidden');
 }
 
 function restoreDomainState(domain) {
@@ -139,6 +148,12 @@ function restoreDomainState(domain) {
         document.getElementById('discover-result').classList.add('hidden');
     } else {
         document.getElementById('discover-result').classList.remove('hidden');
+    }
+    document.getElementById('recommend-result').innerHTML = domainState[domain].recommendHTML;
+    if (domainState[domain].recommendHidden) {
+        document.getElementById('recommend-result').classList.add('hidden');
+    } else {
+        document.getElementById('recommend-result').classList.remove('hidden');
     }
 }
 
@@ -205,6 +220,8 @@ document.addEventListener('DOMContentLoaded', () => {
             btnAnime.classList.remove('active');
             btnAnime.style.color = 'rgba(255,255,255,0.5)';
             if (discoverBtn) discoverBtn.textContent = '🔮 Discover Movies';
+            const recommendBtn = document.getElementById('recommend-btn');
+            if (recommendBtn) recommendBtn.textContent = '💡 Generate Recommendations';
             
             document.querySelector('[data-view="add"]').innerHTML = '➕ Log Movie';
             const logHeader = document.querySelector('#view-add h2');
@@ -217,11 +234,30 @@ document.addEventListener('DOMContentLoaded', () => {
             btnMovies.classList.remove('active');
             btnMovies.style.color = 'rgba(255,255,255,0.5)';
             if (discoverBtn) discoverBtn.textContent = '🔮 Discover Anime';
+            const recommendBtn = document.getElementById('recommend-btn');
+            if (recommendBtn) recommendBtn.textContent = '💡 Generate Recommendations';
             
             document.querySelector('[data-view="add"]').innerHTML = '➕ Log Anime';
             const logHeader = document.querySelector('#view-add h2');
             if (logHeader) logHeader.textContent = 'Log an Anime';
             if (tmdbSearchInput) tmdbSearchInput.placeholder = 'Search for an anime on AniList...';
+        }
+
+        // Toggle Deep Insights Domain Visibility
+        const diMovieSec = document.getElementById('di-movie-section');
+        const diAnimeSec = document.getElementById('di-anime-section');
+        const epsConfigMovie = document.getElementById('eps-config-movie');
+        const epsConfigAnime = document.getElementById('eps-config-anime');
+        if (domain === 'movies') {
+            if(diMovieSec) { diMovieSec.style.display = 'flex'; diMovieSec.classList.add('active'); }
+            if(diAnimeSec) { diAnimeSec.style.display = 'none'; diAnimeSec.classList.remove('active'); }
+            if(epsConfigMovie) epsConfigMovie.style.display = 'flex';
+            if(epsConfigAnime) epsConfigAnime.style.display = 'none';
+        } else {
+            if(diMovieSec) { diMovieSec.style.display = 'none'; diMovieSec.classList.remove('active'); }
+            if(diAnimeSec) { diAnimeSec.style.display = 'flex'; diAnimeSec.classList.add('active'); }
+            if(epsConfigMovie) epsConfigMovie.style.display = 'none';
+            if(epsConfigAnime) epsConfigAnime.style.display = 'flex';
         }
         
         // Restore per-domain genre from saved state
@@ -501,6 +537,22 @@ navLinks.forEach(link => {
             fetchArchive(); // refresh data
         } else if (targetView === 'watchlist') {
             fetchWatchlist();
+        } else if (targetView === 'recommendations') {
+            const listEl = document.getElementById('recommend-list');
+            // If empty, try fetching cached recommendations
+            if (listEl && listEl.children.length === 0) {
+                const recommendResult = document.getElementById('recommend-result');
+                recommendResult.classList.add('hidden');
+                fetch(apiUrl(`recommend`))
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.movies && data.movies.length > 0) {
+                            renderRecommendResults(data.movies);
+                            recommendResult.classList.remove('hidden');
+                        }
+                    })
+                    .catch(err => console.error('Failed to load cached recommendations', err));
+            }
         } else if (targetView === 'predict') {
             const formContainer = document.querySelector('#view-predict .form-container');
             const searchBox = formContainer.querySelector('.tmdb-search-box');
@@ -1080,7 +1132,7 @@ function renderDiscoverPage() {
             : `<div style="width:80px; min-width:80px; height:120px; background:rgba(255,255,255,0.04); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1.5rem;">🎬</div>`;
 
         return `
-        <div class="glass-panel slide-up" style="display:flex; gap:1.5rem; align-items:flex-start; padding: 1.5rem; animation-delay:${idx*0.06}s;">
+        <div class="glass-panel slide-up" onclick="window.toggleCardDetails('discover-details-${m.id}')" style="cursor:pointer; display:flex; gap:1.5rem; align-items:flex-start; padding: 1.5rem; animation-delay:${idx*0.06}s;">
             ${posterHtml}
             <div style="flex:1; min-width:0;">
                 <div style="display:flex; align-items:baseline; gap:0.6rem; flex-wrap:wrap; margin-bottom:0.5rem;">
@@ -1091,55 +1143,23 @@ function renderDiscoverPage() {
                     <span class="rating-badge">🎯 ${m.match_score}% match</span>
                     <span class="rating-badge" style="background:rgba(255,255,255,0.05); border-color:var(--glass-border); color:var(--text-secondary);">⭐ ${parseFloat(m.tmdb_rating).toFixed(1)} ${window.CURRENT_DOMAIN === 'anime' ? 'AniList' : 'TMDB'}</span>
                 </div>
-                <p style="color: var(--text-secondary); font-size:0.9rem; line-height: 1.55; margin-bottom:0.8rem;">${m.overview || 'No overview available.'}</p>
-                ${statsHtml}
-                <div style="display:flex; gap:0.5rem; margin-top:1rem;">
-                    <button class="primary-btn quicklog-trigger" 
-                        data-tmdb-id="${m.id}" 
-                        data-title="${m.title.replace(/"/g, '&quot;')}" 
-                        style="flex:1; font-size:0.82rem; padding:0.45rem 0.9rem;">
-                        ➕ Add to Archive
-                    </button>
-                    <button class="secondary-btn discover-add-watchlist-btn" 
-                        data-id="${m.id}" 
-                        data-title="${m.title.replace(/"/g, '&quot;')}" 
-                        data-year="${m.release_year}" 
-                        data-poster="${m.poster_path}" 
-                        style="flex:1; font-size:0.82rem; padding:0.45rem 0.9rem;">
-                        📋 Watchlist
-                    </button>
+                <div id="discover-details-${m.id}" style="display:none; flex-direction:column;">
+                    <p style="color: var(--text-secondary); font-size:0.9rem; line-height: 1.55; margin-bottom:0.8rem;">${m.overview || 'No overview available.'}</p>
+                    ${statsHtml}
+                    <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+                        <button class="primary-btn quicklog-trigger" onclick="event.stopPropagation(); window.globalAddToArchive('${m.id}', '${m.title.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"
+                            style="flex:1; font-size:0.82rem; padding:0.45rem 0.9rem;">
+                            ➕ Add to Archive
+                        </button>
+                        <button class="secondary-btn discover-add-watchlist-btn" onclick="event.stopPropagation(); window.globalAddToWatchlist('${m.id}', '${m.title.replace(/'/g, "\\'").replace(/"/g, '&quot;')}', '${m.release_year}', '${m.poster_path}')"
+                            style="flex:1; font-size:0.82rem; padding:0.45rem 0.9rem;">
+                            📋 Watchlist
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>`;
     }).join('');
-
-    // Wire up buttons
-    document.querySelectorAll('.quicklog-trigger').forEach(btn => {
-        btn.addEventListener('click', () => openQuickLog(btn.dataset.tmdbId, btn.dataset.title));
-    });
-
-    document.querySelectorAll('.discover-add-watchlist-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-            try {
-                const payload = {
-                    tmdb_id: e.currentTarget.dataset.id,
-                    title: e.currentTarget.dataset.title,
-                    release_year: e.currentTarget.dataset.year,
-                    poster_path: e.currentTarget.dataset.poster
-                };
-                const rw = await fetch(apiUrl('watchlist'), {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify(payload)
-                });
-                const rd = await rw.json();
-                if(!rw.ok) throw new Error(rd.error);
-                showToast('✅ Added to Watchlist!');
-            } catch(err) {
-                showToast('❌ ' + err.message, true);
-            }
-        });
-    });
 
     // Render pagination
     if (paginationEl) {
@@ -1200,6 +1220,96 @@ discoverBtn.addEventListener('click', async () => {
         discoverBtn.textContent = window.CURRENT_DOMAIN === 'anime' ? '🔮 Discover Anime' : '🔮 Discover Movies';
     }
 });
+
+// Recommend UI DOM
+const recommendBtn = document.getElementById('recommend-btn');
+const recommendResult = document.getElementById('recommend-result');
+
+function renderRecommendResults(results) {
+    const listEl = document.getElementById('recommend-list');
+    
+    if (!results || results.length === 0) {
+        listEl.innerHTML = '<p>No results found.</p>';
+        return;
+    }
+
+    listEl.innerHTML = results.map((m, idx) => {
+        const statsHtml = `<div class="nerd-stats" style="margin-top:0.5rem;">
+            <div class="nerd-title">🤓 Nerd Stats</div>
+            <div>Tag match (Sparse): ${m.raw_cosine_similarity.toFixed(4)}</div>
+            ${m.dense_similarity ? `<div>Story match (Dense): ${m.dense_similarity.toFixed(4)}</div>` : ''}
+            ${m.narrative_bias !== undefined ? `<div>Narrative match: ${m.narrative_bias > 0 ? '+' : ''}${m.narrative_bias.toFixed(4)}</div>` : ''}
+            ${m.oracle_bias !== undefined ? `<div style="color:var(--accent-gold, #C9A96E);">Oracle Bias: ${m.oracle_bias > 0 ? '+' : ''}${m.oracle_bias.toFixed(4)}</div>` : ''}
+            ${m.spiritual_bias !== undefined ? `<div style="color:#d946ef;">Spiritual Bias: ${m.spiritual_bias > 0 ? '+' : ''}${m.spiritual_bias.toFixed(4)}</div>` : ''}
+            <div style="color:var(--accent-primary); margin-top:0.2rem; font-weight:bold;">Blended Score: ${m.final_similarity.toFixed(4)}</div>
+            <div style="margin-top:0.4rem; margin-bottom:0.2rem;">Top matching features:</div>
+            <ul>${m.top_features.map(f => `<li>+${f.score.toFixed(3)} ${f.rawName || f.friendlyName || f.name}</li>`).join('')}</ul>
+        </div>`;
+
+        const posterHtml = m.poster_path
+            ? (m.poster_path.startsWith('http') 
+                ? `<img src="${m.poster_path}" alt="Poster" style="width:80px; min-width:80px; border-radius:10px; box-shadow: 0 6px 16px rgba(0,0,0,0.6);">`
+                : `<img src="https://image.tmdb.org/t/p/w185${m.poster_path}" alt="Poster" style="width:80px; min-width:80px; border-radius:10px; box-shadow: 0 6px 16px rgba(0,0,0,0.6);">`)
+            : `<div style="width:80px; min-width:80px; height:120px; background:rgba(255,255,255,0.04); border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1.5rem;">🎬</div>`;
+
+        return `
+        <div class="glass-panel slide-up" onclick="window.toggleCardDetails('recommend-details-${m.id}')" style="cursor:pointer; display:flex; gap:1.5rem; align-items:flex-start; padding: 1.5rem; animation-delay:${idx*0.06}s;">
+            ${posterHtml}
+            <div style="flex:1; min-width:0;">
+                <div style="display:flex; align-items:baseline; gap:0.6rem; flex-wrap:wrap; margin-bottom:0.5rem;">
+                    <h3 style="font-size:1.15rem; font-weight:700;">${m.title}</h3>
+                    <span style="color:var(--text-secondary); font-size:0.9rem;">${m.release_year}</span>
+                </div>
+                <div style="display:flex; gap:0.5rem; margin-bottom:0.8rem; flex-wrap:wrap;">
+                    <span class="rating-badge">🎯 ${m.match_score}% match</span>
+                    <span class="rating-badge" style="background:rgba(255,255,255,0.05); border-color:var(--glass-border); color:var(--text-secondary);">⭐ ${parseFloat(m.tmdb_rating).toFixed(1)} ${window.CURRENT_DOMAIN === 'anime' ? 'AniList' : 'TMDB'}</span>
+                </div>
+                <div id="recommend-details-${m.id}" style="display:none; flex-direction:column;">
+                    <p style="color: var(--text-secondary); font-size:0.9rem; line-height: 1.55; margin-bottom:0.8rem;">${m.overview || 'No overview available.'}</p>
+                    ${m.explanation ? `<div style="margin-bottom:0.8rem; font-size:0.9rem; color:var(--accent-primary); font-style:italic;">${m.explanation}</div>` : ''}
+                    ${statsHtml}
+                    <div style="display:flex; gap:0.5rem; margin-top:1rem;">
+                        <button class="primary-btn quicklog-trigger" onclick="event.stopPropagation(); window.globalAddToArchive('${m.id}', '${m.title.replace(/'/g, "\\'").replace(/"/g, '&quot;')}')"
+                            style="flex:1; font-size:0.82rem; padding:0.45rem 0.9rem;">
+                            ➕ Add to Archive
+                        </button>
+                        <button class="secondary-btn discover-add-watchlist-btn" onclick="event.stopPropagation(); window.globalAddToWatchlist('${m.id}', '${m.title.replace(/'/g, "\\'").replace(/"/g, '&quot;')}', '${m.release_year}', '${m.poster_path}')"
+                            style="flex:1; font-size:0.82rem; padding:0.45rem 0.9rem;">
+                            📋 Watchlist
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+
+    // Removed old querySelectorAll event listeners for quicklog-trigger and discover-add-watchlist-btn to prevent innerHTML bugs
+}
+
+if (recommendBtn) {
+    recommendBtn.addEventListener('click', async () => {
+        saveUIState();
+        recommendBtn.textContent = 'Generating...';
+        recommendResult.classList.add('hidden');
+        
+        try {
+            let url = apiUrl(`recommend?regenerate=true`);
+            const res = await fetch(url);
+            const data = await res.json();
+            
+            if (!res.ok) throw new Error(data.error || 'Failed to generate recommendations');
+            
+            renderRecommendResults(data.movies);
+            
+            recommendResult.classList.remove('hidden');
+        } catch (err) {
+            console.error(err);
+            alert(err.message);
+        } finally {
+            recommendBtn.textContent = '💡 Generate Recommendations';
+        }
+    });
+}
 
 // Insights Flow
 const insightsNav = document.querySelector('[data-view="insights"]');
@@ -1287,6 +1397,23 @@ function openQuickLog(tmdbId, title) {
     document.getElementById('quicklog-notes').value = '';
     document.getElementById('quicklog-modal').classList.remove('hidden');
 }
+window.globalAddToArchive = openQuickLog;
+
+window.globalAddToWatchlist = async function(id, title, year, poster) {
+    try {
+        const payload = { tmdb_id: id, title, release_year: year, poster_path: poster };
+        const rw = await fetch(apiUrl('watchlist'), {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const rd = await rw.json();
+        if(!rw.ok) throw new Error(rd.error);
+        showToast('✅ Added to Watchlist!');
+    } catch(err) {
+        showToast('❌ ' + err.message, true);
+    }
+};
 
 document.addEventListener('DOMContentLoaded', () => {
     const quicklogModal = document.getElementById('quicklog-modal');
@@ -1520,168 +1647,291 @@ document.addEventListener('DOMContentLoaded', () => {
                 targetEl.classList.add('active');
                 targetEl.style.display = 'block';
             }
-            
             if (btn.dataset.tab === 'oracle') {
-                loadOracleProfile();
+                loadCachedTasteProfile();
             }
         });
     });
 
-    async function loadOracleProfile() {
+    async function loadCachedTasteProfile() {
         try {
             const res = await fetch('/api/profile');
             if (res.ok) {
                 const data = await res.json();
-                if (data.name) document.getElementById('oracle-name').value = data.name;
-                if (data.vedicZodiac) document.getElementById('oracle-vedic').value = data.vedicZodiac;
-                if (data.chineseZodiac) document.getElementById('oracle-chinese').value = data.chineseZodiac;
-                
-                if (data.insightsReading) {
-                    document.getElementById('oracle-reading-container').classList.remove('hidden');
-                    if (window.marked) {
-                        document.getElementById('oracle-reading-content').innerHTML = marked.parse(data.insightsReading);
-                    } else {
-                        document.getElementById('oracle-reading-content').textContent = data.insightsReading;
-                    }
+                if (data.tasteSummary) {
+                    renderDeepInsights(data.tasteSummary);
                 }
             }
-        } catch(e) {}
+        } catch (e) {
+            console.warn("Failed to load cached taste profile", e);
+        }
     }
 
-    const saveOracleBtn = document.getElementById('btn-save-oracle-profile');
-    if(saveOracleBtn) {
-        saveOracleBtn.addEventListener('click', async () => {
-            const profileData = {
-                name: document.getElementById('oracle-name').value,
-                vedicZodiac: document.getElementById('oracle-vedic').value,
-                chineseZodiac: document.getElementById('oracle-chinese').value
-            };
+    function parseTasteSummary(text) {
+        const data = {
+            movie: { archetypes: [] }, anime: { archetypes: [] }
+        };
+        
+        let currentDomain = 'movie';
+        const lines = text.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+            let line = lines[i].trim();
+            if (line.includes('=== THEIR MOVIE TASTE ===')) { currentDomain = 'movie'; continue; }
+            if (line.includes('=== THEIR ANIME TASTE ===')) { currentDomain = 'anime'; continue; }
             
-            try {
-                const oldText = saveOracleBtn.textContent;
-                saveOracleBtn.textContent = "Saving...";
-                await fetch('/api/profile', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(profileData)
-                });
-                saveOracleBtn.textContent = "Saved!";
-                setTimeout(() => saveOracleBtn.textContent = oldText, 2000);
-            } catch(e) {
-                alert("Failed to save profile");
+            if (line.startsWith('TASTE BREADTH:')) {
+                data[currentDomain].breadth = lines[i+1]?.trim() || '';
+            } else if (line.startsWith('GENRES THEY LOVE:')) {
+                data[currentDomain].lovedGenres = line.replace('GENRES THEY LOVE:', '').split(',').map(s=>s.trim()).filter(Boolean);
+            } else if (line.startsWith('THEMES & ELEMENTS THEY SEEK:')) {
+                data[currentDomain].lovedThemes = line.replace('THEMES & ELEMENTS THEY SEEK:', '').split(',').map(s=>s.trim()).filter(Boolean);
+            } else if (line.startsWith('GENRES THEY DISLIKE:')) {
+                data[currentDomain].dislikedGenres = line.replace('GENRES THEY DISLIKE:', '').split(',').map(s=>s.trim()).filter(Boolean);
+            } else if (line.startsWith('THEMES & ELEMENTS THEY REJECT:')) {
+                data[currentDomain].dislikedThemes = line.replace('THEMES & ELEMENTS THEY REJECT:', '').split(',').map(s=>s.trim()).filter(Boolean);
+            } else if (line.startsWith('WHAT THEIR BELOVED STORIES ARE ABOUT:')) {
+                data[currentDomain].belovedStory = lines[i+1]?.trim() || '';
+            } else if (line.startsWith('WHAT THEIR DISLIKED STORIES ARE ABOUT:')) {
+                data[currentDomain].dislikedStory = lines[i+1]?.trim() || '';
+            } else if (line.startsWith('TASTE EVOLUTION:')) {
+                data[currentDomain].evolution = line.replace('TASTE EVOLUTION:', '').trim();
+            } else if (line.startsWith('OUTLIER FAVORITE:')) {
+                data[currentDomain].outlier = line.replace('OUTLIER FAVORITE:', '').trim();
+            } else if (line.startsWith('VIEWER PERSONALITY:')) {
+                data[currentDomain].personality = lines[i+1]?.trim() || '';
+            } else if (line.startsWith('TASTE ARCHETYPES')) {
+                let j = i + 1;
+                while (j < lines.length && lines[j].trim().startsWith('-')) {
+                    const archLine = lines[j].trim().substring(1).trim();
+                    const match = archLine.match(/(.*?)\s*\((\d+)%\):\s*e\.g\.,?\s*(.*)/);
+                    if (match) {
+                        data[currentDomain].archetypes.push({ name: match[1].trim(), percent: match[2], examples: match[3].trim() });
+                    }
+                    j++;
+                }
             }
-        });
+        }
+        return data;
     }
 
-    let chatHistory = [];
+    function renderBubbles(containerId, loved, disliked) {
+        const c = document.getElementById(containerId);
+        if(!c) return;
+        let html = '';
+        if (loved) loved.forEach(t => { if(t && t !== 'None strongly') html += `<div class="genre-bubble loved">${t}</div>` });
+        if (disliked) disliked.forEach(t => { if(t && t !== 'None strongly') html += `<div class="genre-bubble disliked">${t}</div>` });
+        if (!html) html = '<div class="genre-bubble neutral">None</div>';
+        c.innerHTML = html;
+    }
+
+    function renderDeepInsights(summaryText) {
+        const data = parseTasteSummary(summaryText);
+        document.getElementById('deep-insights-dashboard').classList.remove('hidden');
+        
+        const renderArch = (containerId, archs, outlierText) => {
+            const arcContainer = document.getElementById(containerId);
+            if (!arcContainer) return;
+            if(archs && archs.length > 0) {
+                let totalPct = 0;
+                archs.forEach(a => {
+                    totalPct += parseInt(a.percent) || 0;
+                });
+                
+                const displayArchs = [...archs];
+                if (totalPct < 100) {
+                    displayArchs.push({
+                        name: "Unclustered / other",
+                        percent: 100 - totalPct,
+                        examples: outlierText ? outlierText : "Mixed viewing history",
+                        isOther: true
+                    });
+                }
+                
+                let maxArch = displayArchs[0];
+                displayArchs.forEach(a => {
+                    if (parseInt(a.percent) > parseInt(maxArch.percent)) {
+                        maxArch = a;
+                    }
+                });
+
+                const palette = ['#4f8ef7', '#7c3aed', '#f43f5e', '#f59e0b', '#10b981', '#ec4899', '#8b5cf6'];
+                const unclusteredColor = '#555555';
+                
+                const labels = displayArchs.map(a => a.name);
+                const data = displayArchs.map(a => parseInt(a.percent));
+                const bgColors = displayArchs.map((a, i) => a.isOther ? unclusteredColor : palette[i % palette.length]);
+
+                const canvasId = `chart-${containerId}`;
+                
+                arcContainer.innerHTML = `
+                    <div class="archetypes-layout" style="display: flex; flex-wrap: wrap; gap: 2.5rem; align-items: center; justify-content: center;">
+                        <div class="archetypes-chart-col slide-up" style="flex: 1; min-width: 250px; max-width: 300px; position: relative;">
+                            <canvas id="${canvasId}"></canvas>
+                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; width: 70%;">
+                                <div style="font-size: 2.5rem; font-weight: 800; line-height: 1; color: var(--text-primary); margin-bottom: 0.2rem;">${maxArch.percent}%</div>
+                                <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.2; word-wrap: break-word;">${maxArch.name}</div>
+                            </div>
+                        </div>
+                        <div class="archetypes-list-col slide-up" style="flex: 1.5; min-width: 280px; display: flex; flex-direction: column; gap: 0.75rem; animation-delay: 0.1s;">
+                            ${displayArchs.map((a, i) => `
+                                <div class="arch-list-item" data-index="${i}" style="display: flex; gap: 1rem; align-items: center; padding: 0.8rem; border-radius: 10px; transition: background 0.2s, transform 0.2s; cursor: default; border: 1px solid transparent;">
+                                    <div style="width: 14px; height: 14px; border-radius: 50%; background-color: ${a.isOther ? unclusteredColor : palette[i % palette.length]}; flex-shrink: 0;"></div>
+                                    <div style="flex: 1; font-size: 0.95rem; color: var(--text-secondary); line-height: 1.5;">
+                                        ${a.isOther && outlierText ? 'Fav Outliers : ' + a.examples : a.examples}
+                                    </div>
+                                    <div style="font-weight: 800; color: ${a.isOther ? 'var(--text-secondary)' : 'var(--text-primary)'}; font-size: 1.1rem; flex-shrink: 0; margin-left: 1rem;">
+                                        ${a.percent}%
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+
+                setTimeout(() => {
+                    const ctx = document.getElementById(canvasId).getContext('2d');
+                    
+                    if (window[`chartInstance_${containerId}`]) {
+                        window[`chartInstance_${containerId}`].destroy();
+                    }
+
+                    window[`chartInstance_${containerId}`] = new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                data: data,
+                                backgroundColor: bgColors,
+                                borderWidth: 0,
+                                hoverOffset: 6
+                            }]
+                        },
+                        options: {
+                            cutout: '72%',
+                            responsive: true,
+                            maintainAspectRatio: true,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                                    titleColor: '#fff',
+                                    bodyColor: '#ccc',
+                                    cornerRadius: 8,
+                                    padding: 12,
+                                    bodyFont: { family: "'Outfit', sans-serif", size: 14 },
+                                    callbacks: {
+                                        title: function() { return ''; },
+                                        label: function(context) {
+                                            return ` ${context.label} ${context.raw}%`;
+                                        }
+                                    }
+                                }
+                            },
+                            onHover: (event, elements) => {
+                                const listItems = document.querySelectorAll(`#${containerId} .arch-list-item`);
+                                listItems.forEach(el => {
+                                    el.style.background = 'transparent';
+                                    el.style.borderColor = 'transparent';
+                                    el.style.transform = 'translateX(0)';
+                                });
+                                if (elements && elements.length > 0) {
+                                    const index = elements[0].index;
+                                    const item = document.querySelector(`#${containerId} .arch-list-item[data-index="${index}"]`);
+                                    if (item) {
+                                        item.style.background = 'var(--glass-bg)';
+                                        item.style.borderColor = 'var(--glass-border)';
+                                        item.style.transform = 'translateX(4px)';
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    const listItems = document.querySelectorAll(`#${containerId} .arch-list-item`);
+                    listItems.forEach(item => {
+                        item.addEventListener('mouseenter', (e) => {
+                            const index = parseInt(e.currentTarget.getAttribute('data-index'));
+                            const chart = window[`chartInstance_${containerId}`];
+                            if (chart) {
+                                chart.setActiveElements([{datasetIndex: 0, index: index}]);
+                                chart.tooltip.setActiveElements([{datasetIndex: 0, index: index}], {x: 0, y: 0});
+                                chart.update();
+                                e.currentTarget.style.background = 'var(--glass-bg)';
+                                e.currentTarget.style.borderColor = 'var(--glass-border)';
+                                e.currentTarget.style.transform = 'translateX(4px)';
+                            }
+                        });
+                        item.addEventListener('mouseleave', (e) => {
+                            const chart = window[`chartInstance_${containerId}`];
+                            if (chart) {
+                                chart.setActiveElements([]);
+                                chart.tooltip.setActiveElements([], {x: 0, y: 0});
+                                chart.update();
+                                e.currentTarget.style.background = 'transparent';
+                                e.currentTarget.style.borderColor = 'transparent';
+                                e.currentTarget.style.transform = 'translateX(0)';
+                            }
+                        });
+                    });
+                }, 0);
+                
+            } else {
+                arcContainer.innerHTML = '<p style="color:var(--text-secondary);">No archetypes found.</p>';
+            }
+        };
+
+        // Movie
+        document.getElementById('di-movie-breadth-text').textContent = data.movie.breadth || 'Not enough data';
+        document.getElementById('di-movie-evolution-text').textContent = data.movie.evolution || 'Not enough data';
+        document.getElementById('di-movie-personality-text').textContent = data.movie.personality || 'Not enough data';
+        document.getElementById('di-movie-beloved').textContent = data.movie.belovedStory || 'Not enough data';
+        document.getElementById('di-movie-disliked').textContent = data.movie.dislikedStory || 'Not enough data';
+        renderBubbles('di-movie-genres', data.movie.lovedGenres, data.movie.dislikedGenres);
+        renderBubbles('di-movie-themes', data.movie.lovedThemes, data.movie.dislikedThemes);
+        renderArch('di-movie-archetypes-container', data.movie.archetypes, data.movie.outlier);
+        
+        // Anime
+        document.getElementById('di-anime-breadth-text').textContent = data.anime.breadth || 'Not enough data';
+        document.getElementById('di-anime-evolution-text').textContent = data.anime.evolution || 'Not enough data';
+        document.getElementById('di-anime-personality-text').textContent = data.anime.personality || 'Not enough data';
+        document.getElementById('di-anime-beloved').textContent = data.anime.belovedStory || 'Not enough data';
+        document.getElementById('di-anime-disliked').textContent = data.anime.dislikedStory || 'Not enough data';
+        renderBubbles('di-anime-genres', data.anime.lovedGenres, data.anime.dislikedGenres);
+        renderBubbles('di-anime-themes', data.anime.lovedThemes, data.anime.dislikedThemes);
+        renderArch('di-anime-archetypes-container', data.anime.archetypes, data.anime.outlier);
+    }
+
     const btnGenerateReading = document.getElementById('btn-generate-reading');
     if(btnGenerateReading) {
         btnGenerateReading.addEventListener('click', async () => {
-            btnGenerateReading.textContent = "🔮 Reading the stars... (This takes a moment)";
+            btnGenerateReading.textContent = "✨ Computing Profile...";
             btnGenerateReading.disabled = true;
             
+            const movieEps = document.getElementById('input-eps-movie') ? document.getElementById('input-eps-movie').value : null;
+            const animeEps = document.getElementById('input-eps-anime') ? document.getElementById('input-eps-anime').value : null;
+            
             try {
-                const res = await fetch('/api/deep_insights/generate', { method: 'POST' });
+                const res = await fetch('/api/deep_insights/generate', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ movieEps, animeEps })
+                });
                 const data = await res.json();
-                if (data.reading) {
-                    document.getElementById('oracle-reading-container').classList.remove('hidden');
-                    if(window.marked) {
-                        document.getElementById('oracle-reading-content').innerHTML = marked.parse(data.reading);
-                    } else {
-                        document.getElementById('oracle-reading-content').textContent = data.reading;
-                    }
-                    chatHistory = []; // Reset chat history on new reading
-                    document.getElementById('oracle-chat-history').innerHTML = '';
+                if (data.summary) {
+                    renderDeepInsights(data.summary);
                 } else if (data.error) {
                     alert(data.error);
                 }
             } catch(e) {
                 alert("Failed to generate insights: " + e.message);
             } finally {
-                btnGenerateReading.textContent = "🔮 Consult the Oracle";
+                btnGenerateReading.textContent = "✨ Compute Taste Profile";
                 btnGenerateReading.disabled = false;
             }
         });
     }
 
-    const btnSendChat = document.getElementById('btn-send-chat');
-    const oracleChatInput = document.getElementById('oracle-chat-input');
-    if(btnSendChat && oracleChatInput) {
-        btnSendChat.addEventListener('click', sendOracleChat);
-        oracleChatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendOracleChat();
-        });
-    }
-
-    async function sendOracleChat() {
-        const input = document.getElementById('oracle-chat-input');
-        const msg = input.value.trim();
-        if (!msg) return;
-        
-        input.value = '';
-        
-        const historyContainer = document.getElementById('oracle-chat-history');
-        
-        // Add user message
-        const userDiv = document.createElement('div');
-        userDiv.className = 'chat-msg chat-user slide-up';
-        userDiv.textContent = msg;
-        historyContainer.appendChild(userDiv);
-        historyContainer.scrollTop = historyContainer.scrollHeight;
-        
-        // Create oracle placeholder
-        const oracleDiv = document.createElement('div');
-        oracleDiv.className = 'chat-msg chat-oracle';
-        oracleDiv.innerHTML = '<span class="loading-dots">Consulting the ether...</span>';
-        historyContainer.appendChild(oracleDiv);
-        historyContainer.scrollTop = historyContainer.scrollHeight;
-        
-        try {
-            const res = await fetch('/api/deep_insights/chat', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: msg, history: chatHistory })
-            });
-            
-            chatHistory.push({ role: "user", parts: [{ text: msg }] });
-            
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder("utf-8");
-            oracleDiv.innerHTML = '';
-            
-            let oracleReply = "";
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                const chunk = decoder.decode(value, { stream: true });
-                oracleReply += chunk;
-                if(window.marked) {
-                    oracleDiv.innerHTML = marked.parse(oracleReply);
-                } else {
-                    oracleDiv.textContent = oracleReply;
-                }
-                historyContainer.scrollTop = historyContainer.scrollHeight;
-            }
-            
-            // Flush any remaining buffered bytes from the TextDecoder.
-            // When using { stream: true }, the decoder can hold back trailing
-            // multi-byte characters. This final call releases them.
-            const remaining = decoder.decode();
-            if (remaining) {
-                oracleReply += remaining;
-                if(window.marked) {
-                    oracleDiv.innerHTML = marked.parse(oracleReply);
-                } else {
-                    oracleDiv.textContent = oracleReply;
-                }
-            }
-            
-            chatHistory.push({ role: "model", parts: [{ text: oracleReply }] });
-            
-        } catch(e) {
-            oracleDiv.textContent = "The connection to the ether was lost... " + e.message;
-        }
-    }
+    // (Removed duplicate domain toggle logic for Deep Insights since it now uses the global switchDomain)
 
 });
 // Check AniList Auth Status

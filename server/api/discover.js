@@ -20,13 +20,9 @@ const GENRE_MAP = {
 };
 
 async function handleMovieDiscover(req, res) {
-    const { genre, hidden_gem } = req.query;
+    const { genre, sort_by, country, depth = 0 } = req.query;
     const TMDB_API_KEY = process.env.TMDB_API_KEY;
     const genreId = genre ? GENRE_MAP[genre] : null;
-
-    const { getMedoidSeedIds } = require('../services/preprocessor');
-    const topWatchedIds = getMedoidSeedIds(movieDb, false);
-    if (topWatchedIds.length === 0) return res.status(400).json({ error: 'Need rated movies logged to discover via recommendations!' });
 
     const movieCache = getCache('movie');
     let watchedIds = movieCache.watchedIds;
@@ -40,27 +36,55 @@ async function handleMovieDiscover(req, res) {
         movieCache.watchlistIds = watchlistIds;
     }
 
-    const candidateMap = new Map();
-    for (const seedId of topWatchedIds) {
+    let urlBase = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&vote_count.gte=50`;
+    if (genreId) urlBase += `&with_genres=${genreId}`;
+    if (country) urlBase += `&with_origin_country=${country}`;
+    if (sort_by && sort_by !== 'random') {
+        urlBase += `&sort_by=${sort_by}`;
+    }
+
+    let totalPages = 10;
+    try {
+        const initialRes = await fetchWithRetry(`${urlBase}&page=1`);
+        const initialData = await initialRes.json();
+        if (initialData.total_pages) {
+            totalPages = Math.min(initialData.total_pages, 500);
+        }
+    } catch(e) {}
+
+    const isRandom = !sort_by || sort_by === 'random';
+    let startPage = 1;
+    if (!isRandom) {
+        startPage = Math.max(1, Math.floor((depth / 100) * totalPages));
+    }
+
+    let candidatesMap = new Map();
+    let requestsMade = 0;
+    let currentPage = isRandom ? Math.floor(Math.random() * totalPages) + 1 : startPage;
+
+    while (candidatesMap.size < 40 && requestsMade < 10) {
         try {
-            const url = `https://api.themoviedb.org/3/movie/${seedId}/recommendations?api_key=${TMDB_API_KEY}`;
-            const tmdbRes = await fetchWithRetry(url);
-            const data = await tmdbRes.json();
+            const res = await fetchWithRetry(`${urlBase}&page=${currentPage}`);
+            const data = await res.json();
             if (data.results) {
-                for (const rec of data.results) {
-                    if (!watchedIds.has(rec.id) && !watchlistIds.has(rec.id) && (!genreId || (rec.genre_ids && rec.genre_ids.includes(genreId)))) {
-                        candidateMap.set(rec.id, rec);
+                for (const m of data.results) {
+                    if (!watchedIds.has(m.id) && !watchlistIds.has(m.id)) {
+                        candidatesMap.set(m.id, m);
                     }
                 }
             }
         } catch(e) {}
+        requestsMade++;
+        if (isRandom) {
+            currentPage = Math.floor(Math.random() * totalPages) + 1;
+        } else {
+            currentPage++;
+            if (currentPage > totalPages) currentPage = 1;
+        }
     }
 
-    let candidates = Array.from(candidateMap.values());
+    let candidates = Array.from(candidatesMap.values());
     if (candidates.length === 0) return res.status(404).json({ error: 'No un-watched candidates found matching criteria' });
-
-    let totalPages = 1;
-    const initialStartPage = 1;
 
     const vocab = buildVocab(movieDb);
     const profileVec = getTasteProfile(movieDb, vocab);
@@ -68,13 +92,6 @@ async function handleMovieDiscover(req, res) {
     
     if (!profileVec) return res.status(400).json({ error: 'Need rated movies logged to discover!' });
     const featureNames = getFeatureNames(vocab);
-
-    const random30 = [];
-    let available = [...candidates];
-    for(let i=0; i<30 && available.length > 0; i++) {
-        const idx = Math.floor(Math.random() * available.length);
-        random30.push(available.splice(idx, 1)[0]);
-    }
 
     const CONCURRENCY_LIMIT = 15;
     let activeCount = 0;
@@ -90,9 +107,9 @@ async function handleMovieDiscover(req, res) {
     });
 
     const { getEmbedding } = require('../llm');
-    const enrichedCandidates = await Promise.all(random30.map(movie =>
+    const enrichedCandidates = await Promise.all(candidates.map(movie =>
         runWithSemaphore(async () => {
-            let keywords = [], director = null, top_cast = [], production_companies = [], genres = [genre];
+            let keywords = [], director = null, top_cast = [], production_companies = [], genres = [];
             let imdb_id = null;
             try {
                 const cachedTmdb = tmdbCache.get(movie.id);
@@ -162,7 +179,6 @@ async function handleMovieDiscover(req, res) {
         finalSimilarity = biases.finalSimilarity;
         const percentage = calculateMatchPercentage(finalSimilarity);
         let weight = finalSimilarity;
-        if (hidden_gem === 'true' && (movie.vote_average || 5) < 6.5) weight *= 1.5;
 
         return {
             id: movie.id, title: movie.title, release_year: movie.release_date ? movie.release_date.substring(0,4) : 'N/A',
@@ -175,18 +191,27 @@ async function handleMovieDiscover(req, res) {
         };
     });
 
-    const selectedMovies = runMMR(scoredCandidates, 30, 0.7);
+    const selectedMovies = runMMR(scoredCandidates, 40, 0.7);
     selectedMovies.forEach(m => { delete m.movieVec; delete m.movieDenseVec; });
-    res.json({ movies: selectedMovies, totalPages, startPage: initialStartPage });
+    res.json({ movies: selectedMovies, totalPages, startPage });
 }
 
 async function handleAnimeDiscover(req, res) {
-    let { genre, hidden_gem } = req.query;
-    if (genre) genre = { 'Science Fiction': 'Sci-Fi', 'Documentary': 'Slice of Life' }[genre] || genre;
+    const { genre, sort_by, depth = 0 } = req.query;
 
-    const { getMedoidSeedIds } = require('../services/preprocessor');
-    const topWatchedIds = getMedoidSeedIds(animeDb, true);
-    if (topWatchedIds.length === 0) return res.status(400).json({ error: 'Need rated anime logged to discover via recommendations!' });
+    const animeGenreMap = {
+        'Science Fiction': 'Sci-Fi',
+        'Documentary': 'Slice of Life'
+    };
+    const mappedGenre = genre ? (animeGenreMap[genre] || genre) : null;
+
+    const sortMap = {
+        'popularity.desc': 'POPULARITY_DESC',
+        'primary_release_date.desc': 'START_DATE_DESC',
+        'vote_average.desc': 'SCORE_DESC',
+        'revenue.desc': 'TRENDING_DESC'
+    };
+    const mappedSort = sort_by && sortMap[sort_by] ? sortMap[sort_by] : null;
 
     const animeCache = getCache('anime');
     let watchedIds = animeCache.watchedIds;
@@ -194,28 +219,72 @@ async function handleAnimeDiscover(req, res) {
     let watchlistIds = animeCache.watchlistIds;
     if (!watchlistIds) { watchlistIds = new Set(animeWdb.prepare('SELECT anilist_id FROM watchlist_anime').all().map(r => r.anilist_id)); animeCache.watchlistIds = watchlistIds; }
 
-    const candidateMap = new Map();
-    const REC_QUERY = `query ($id: Int) { Media(id: $id, type: ANIME) { recommendations(page: 1, perPage: 15, sort: RATING_DESC) { nodes { mediaRecommendation { id title { english romaji } startDate { year } episodes format genres tags { name rank } averageScore popularity description(asHtml: false) coverImage { extraLarge } isAdult staff(perPage: 5) { edges { role node { name { full } } } } studios(isMain: true) { edges { node { name } } } } } } } }`;
+    const PAGE_INFO_QUERY = `
+    query ($genre: String, $sort: [MediaSort]) {
+      Page(page: 1, perPage: 1) {
+        pageInfo { lastPage }
+        media(type: ANIME, genre: $genre, sort: $sort) { id }
+      }
+    }`;
 
-    for (const seedId of topWatchedIds) {
+    let totalPages = 10;
+    try {
+        const vars = {};
+        if (mappedGenre) vars.genre = mappedGenre;
+        if (mappedSort) vars.sort = [mappedSort];
+        const pageInfoRes = await fetchWithAniListRetry(PAGE_INFO_QUERY, vars);
+        if (pageInfoRes?.data?.Page?.pageInfo?.lastPage) {
+            totalPages = Math.min(pageInfoRes.data.Page.pageInfo.lastPage, 500);
+        }
+    } catch(e) {}
+
+    const isRandom = !sort_by || sort_by === 'random';
+    let startPage = 1;
+    if (!isRandom) {
+        startPage = Math.max(1, Math.floor((depth / 100) * totalPages));
+    }
+
+    const DISCOVER_QUERY = `
+    query ($page: Int, $genre: String, $sort: [MediaSort]) {
+      Page(page: $page, perPage: 50) {
+        media(type: ANIME, genre: $genre, sort: $sort) {
+          id title { english romaji } startDate { year } episodes format genres tags { name rank }
+          averageScore popularity description(asHtml: false) coverImage { extraLarge }
+          isAdult staff(perPage: 5) { edges { role node { name { full } } } }
+          studios(isMain: true) { edges { node { name } } }
+        }
+      }
+    }`;
+
+    let candidatesMap = new Map();
+    let requestsMade = 0;
+    let currentPage = isRandom ? Math.floor(Math.random() * totalPages) + 1 : startPage;
+
+    while (candidatesMap.size < 40 && requestsMade < 10) {
         try {
-            const data = await fetchWithAniListRetry(REC_QUERY, { id: seedId });
-            const recs = data?.data?.Media?.recommendations?.nodes || [];
-            for (const node of recs) {
-                const rec = node.mediaRecommendation;
-                if (!rec) continue;
-                if (!watchedIds.has(rec.id) && !watchlistIds.has(rec.id) && (!genre || (rec.genres && rec.genres.includes(genre)))) {
-                    candidateMap.set(rec.id, rec);
+            const vars = { page: currentPage };
+            if (mappedGenre) vars.genre = mappedGenre;
+            if (mappedSort) vars.sort = [mappedSort];
+
+            const pageRes = await fetchWithAniListRetry(DISCOVER_QUERY, vars);
+            const mediaList = pageRes?.data?.Page?.media || [];
+            for (const m of mediaList) {
+                if (!watchedIds.has(m.id) && !watchlistIds.has(m.id)) {
+                    candidatesMap.set(m.id, m);
                 }
             }
         } catch(e) {}
+        requestsMade++;
+        if (isRandom) {
+            currentPage = Math.floor(Math.random() * totalPages) + 1;
+        } else {
+            currentPage++;
+            if (currentPage > totalPages) currentPage = 1;
+        }
     }
 
-    let candidates = Array.from(candidateMap.values());
+    let candidates = Array.from(candidatesMap.values());
     if (candidates.length === 0) return res.status(404).json({ error: 'No un-watched candidates found matching criteria' });
-
-    let totalPages = 1;
-    const initialStartPage = 1;
 
     const vocab = buildAnimeVocab(animeDb);
     const profileVec = getAnimeTasteProfile(vocab);
@@ -223,12 +292,8 @@ async function handleAnimeDiscover(req, res) {
     if (!profileVec) return res.status(400).json({ error: 'Need rated anime logged to discover!' });
     const featureNames = getAnimeFeatureNames(vocab);
 
-    const random30 = [];
-    let available = [...candidates];
-    for(let i=0; i<30 && available.length > 0; i++) random30.push(available.splice(Math.floor(Math.random() * available.length), 1)[0]);
-
     const { getEmbedding } = require('../llm');
-    const enrichedCandidates = await Promise.all(random30.map(async (media) => {
+    const enrichedCandidates = await Promise.all(candidates.map(async (media) => {
         let plot_embedding = null;
         const description = (media.description || '').replace(/<[^>]*>?/gm, '');
         if (description) {
@@ -268,7 +333,6 @@ async function handleAnimeDiscover(req, res) {
         
         let popPenalty = Math.max(0.7, Math.min(1.0, Math.log10(anime.popularity || 10) / 5));
         let weight = finalSimilarity * popPenalty;
-        if (hidden_gem === 'true' && (anime.averageScore || 50) < 65) weight *= 1.5;
 
         return {
             id: anime.id, title: anime.title.english || anime.title.romaji, release_year: formattedAnime.release_year,
@@ -281,13 +345,12 @@ async function handleAnimeDiscover(req, res) {
         };
     });
 
-    const selectedMovies = runMMR(scoredCandidates, 30, 0.7);
+    const selectedMovies = runMMR(scoredCandidates, 40, 0.7);
     selectedMovies.forEach(m => {
-        m.explanation = `Matches your taste for ${m.top_features.slice(0, 3).map(e => e.friendlyName || e.rawName || e.name).join(', ')}.`;
         delete m.movieVec; delete m.movieDenseVec;
     });
 
-    res.json({ movies: selectedMovies, totalPages, startPage: initialStartPage });
+    res.json({ movies: selectedMovies, totalPages, startPage });
 }
 
 router.get('/', async (req, res) => {

@@ -1124,3 +1124,195 @@ input[type="range"]#discover-depth:active::-webkit-slider-thumb {
     font-family: 'Playfair Display', serif;
     color: #C9A96E;
 }
+
+/* ── Deep Insights Widgets ───────────────────────────────── */
+.di-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.insight-widget-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.insight-widget-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.insight-widget-card.gradient-border {
+    position: relative;
+    background: linear-gradient(180deg, rgba(31,21,12,0.8) 0%, rgba(10,5,3,0.9) 100%);
+}
+.insight-widget-card.gradient-border::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    border-radius: 16px;
+    padding: 2px;
+    background: linear-gradient(135deg, #C9A96E, #412D15, transparent);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+}
+
+.widget-title {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.8rem;
+    font-weight: 600;
+}
+
+.widget-value {
+    font-size: 1.1rem;
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+.genre-bubble-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+
+.genre-bubble {
+    padding: 0.4rem 1rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #fff;
+    cursor: default;
+    transition: transform 0.2s, filter 0.2s;
+}
+
+.genre-bubble:hover {
+    transform: scale(1.05);
+    filter: brightness(1.2);
+}
+
+.genre-bubble.loved {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(21, 128, 61, 0.4));
+    border-color: rgba(74, 222, 128, 0.3);
+    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.1);
+}
+
+.genre-bubble.disliked {
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(185, 28, 28, 0.4));
+    border-color: rgba(248, 113, 113, 0.3);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.1);
+}
+
+.genre-bubble.neutral {
+    background: rgba(255,255,255,0.05);
+}
+
+.story-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.story-card p {
+    font-size: 1.05rem;
+    line-height: 1.6;
+    color: var(--text-primary);
+    position: relative;
+    z-index: 1;
+}
+
+.story-card.beloved::after {
+    content: "❤️";
+    position: absolute;
+    bottom: -20px;
+    right: -10px;
+    font-size: 8rem;
+    opacity: 0.05;
+    z-index: 0;
+    filter: grayscale(100%);
+    transition: filter 0.3s, opacity 0.3s;
+}
+
+.story-card.beloved:hover::after {
+    filter: grayscale(0%);
+    opacity: 0.1;
+}
+
+.story-card.disliked::after {
+    content: "💀";
+    position: absolute;
+    bottom: -20px;
+    right: -10px;
+    font-size: 8rem;
+    opacity: 0.05;
+    z-index: 0;
+    transition: opacity 0.3s;
+}
+
+.story-card.disliked:hover::after {
+    opacity: 0.15;
+}
+
+/* Taste Archetype Clusters */
+.cluster-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 1.5rem;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+}
+
+.cluster-circle {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: conic-gradient(var(--accent-gold, #C9A96E) var(--p, 0%), rgba(255,255,255,0.05) 0);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1rem;
+    position: relative;
+}
+
+.cluster-circle::before {
+    content: "";
+    position: absolute;
+    inset: 8px;
+    background: var(--surface);
+    border-radius: 50%;
+}
+
+.cluster-percentage {
+    position: relative;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.cluster-name {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--accent-gold, #C9A96E);
+    margin-bottom: 0.5rem;
+}
+
+.cluster-examples {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}

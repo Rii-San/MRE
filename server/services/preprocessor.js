@@ -185,7 +185,7 @@ function getClusterRepresentatives(clusterItems, count = 3) {
     return reps;
 }
 
-function extractCorePlots(allWatched, isAnime) {
+function extractCorePlots(allWatched, isAnime, customEps) {
     const descCol = isAnime ? 'description' : 'overview';
     
     const prepareItems = (thresholdFn) => {
@@ -207,7 +207,7 @@ function extractCorePlots(allWatched, isAnime) {
     const likedItems = prepareItems(r => r >= 8.0);
     const dislikedItems = prepareItems(r => r <= 4.0);
 
-    const targetEps = isAnime ? 0.25 : 0.32;
+    const targetEps = customEps || (isAnime ? 0.25 : 0.32);
     const processSet = (items) => {
         if (items.length === 0) return { medoids: [], outliers: [] };
         if (items.length < 5) return { medoids: items.map(i => i.desc), outliers: [] };
@@ -309,10 +309,10 @@ async function formatClusters(clusters, isAnime, totalVectors) {
     return formattedClusters;
 }
 
-async function generateTasteSummary() {
+async function generateTasteSummary(movieEps = null, animeEps = null) {
     let summary = "";
     
-    const processDomain = async (dbConn, isAnime, title) => {
+    const processDomain = async (dbConn, isAnime, title, customEps) => {
         let domainSummary = `=== THEIR ${title} TASTE ===\n\n`;
         try {
             const allWatched = getAllWatched(dbConn, isAnime);
@@ -330,7 +330,7 @@ async function generateTasteSummary() {
             const notes = allWatched.map(m => m.notes).filter(n => n);
             
             // Extract medoids via DBSCAN
-            const { likedPlots, dislikedPlots, outlierText, likedClusters } = extractCorePlots(allWatched, isAnime);
+            const { likedPlots, dislikedPlots, outlierText, likedClusters } = extractCorePlots(allWatched, isAnime, customEps);
             
             // Generate Narrative via Gemini
             let narrative = { likedSentence: "Stories that align with their aesthetic.", dislikedSentence: "Stories that clash with their preferences." };
@@ -373,8 +373,8 @@ async function generateTasteSummary() {
         return domainSummary;
     };
 
-    summary += await processDomain(db, false, "MOVIE");
-    summary += await processDomain(animeDb, true, "ANIME");
+    summary += await processDomain(db, false, "MOVIE", movieEps);
+    summary += await processDomain(animeDb, true, "ANIME", animeEps);
 
     return summary;
 }

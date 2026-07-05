@@ -24,6 +24,7 @@
                 <li data-view="watchlist">📋 Watchlist</li>
                 <li data-view="add">➕ Log Movie</li>
                 <li data-view="predict">🎯 Predict Score</li>
+                <li data-view="recommendations">💡 Recommendations</li>
                 <li data-view="discover">🔮 Discover</li>
                 <li data-view="insights">📊 Insights</li>
             </ul>
@@ -154,6 +155,19 @@
                 </div>
             </section>
 
+            <!-- View: Recommendations -->
+            <section id="view-recommendations" class="view-section">
+                <header class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
+                    <h2>Your Recommendations</h2>
+                    <button id="recommend-btn" class="primary-btn" style="padding: 0.5rem 1rem; font-size: 0.9rem;">💡 Generate Recommendations</button>
+                </header>
+                <div id="recommend-result" class="hidden slide-up" style="margin-top: 1rem;">
+                    <div id="recommend-list" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)); gap: 1.5rem; align-items: start;">
+                        <!-- Results injected here -->
+                    </div>
+                </div>
+            </section>
+
             <!-- View: Discover -->
             <section id="view-discover" class="view-section">
                 <header class="section-header">
@@ -251,7 +265,7 @@
                     <h2>Taste Insights</h2>
                     <div class="insight-tabs">
                         <button class="insight-tab-btn active" data-tab="dashboard">Dashboard</button>
-                        <button class="insight-tab-btn" data-tab="oracle">Deep Insights (Oracle)</button>
+                        <button class="insight-tab-btn" data-tab="oracle">Deep Insights</button>
                     </div>
                 </header>
                 
@@ -262,61 +276,116 @@
                 </div>
 
                 <div id="insight-tab-oracle" class="insight-tab-content oracle-den" style="display: none;">
-                    
-                    <div class="oracle-profile-panel glass-panel">
-                        <h3 style="margin-top:0; color: var(--accent-gold, #C9A96E);">Oracle Intake</h3>
-                        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                            <input type="text" id="oracle-name" placeholder="Your Name" class="glass-input">
-                            <select id="oracle-vedic" class="glass-input">
-                                <option value="">Vedic Rashi (Moon Sign)</option>
-                                <option value="Mesha (Aries)">Mesha (Aries)</option>
-                                <option value="Vrishabha (Taurus)">Vrishabha (Taurus)</option>
-                                <option value="Mithuna (Gemini)">Mithuna (Gemini)</option>
-                                <option value="Karka (Cancer)">Karka (Cancer)</option>
-                                <option value="Simha (Leo)">Simha (Leo)</option>
-                                <option value="Kanya (Virgo)">Kanya (Virgo)</option>
-                                <option value="Tula (Libra)">Tula (Libra)</option>
-                                <option value="Vrischika (Scorpio)">Vrischika (Scorpio)</option>
-                                <option value="Dhanu (Sagittarius)">Dhanu (Sagittarius)</option>
-                                <option value="Makara (Capricorn)">Makara (Capricorn)</option>
-                                <option value="Kumbha (Aquarius)">Kumbha (Aquarius)</option>
-                                <option value="Meena (Pisces)">Meena (Pisces)</option>
-                            </select>
-                            <select id="oracle-chinese" class="glass-input">
-                                <option value="">Chinese Zodiac</option>
-                                <option value="Rat">Rat</option>
-                                <option value="Ox">Ox</option>
-                                <option value="Tiger">Tiger</option>
-                                <option value="Rabbit">Rabbit</option>
-                                <option value="Dragon">Dragon</option>
-                                <option value="Snake">Snake</option>
-                                <option value="Horse">Horse</option>
-                                <option value="Sheep/Goat">Sheep/Goat</option>
-                                <option value="Monkey">Monkey</option>
-                                <option value="Rooster">Rooster</option>
-                                <option value="Dog">Dog</option>
-                                <option value="Pig">Pig</option>
-                            </select>
+                    <div style="text-align: center; margin: 1rem 0 2rem 0; display: flex; justify-content: center; align-items: center; gap: 1rem;">
+                        <button id="btn-generate-reading" class="primary-btn" style="padding: 0.85rem 2.5rem; font-size: 1.15rem; border-radius: 30px; letter-spacing: 0.5px;">✨ Compute Taste Profile</button>
+                        <div id="eps-config-movie" style="display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem;">
+                            <label style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Epsilon</label>
+                            <input type="number" id="input-eps-movie" value="0.32" step="0.01" class="glass-input" style="width: 80px; padding: 0.4rem; font-size: 0.9rem;">
                         </div>
-                        <button id="btn-save-oracle-profile" class="btn-oracle" style="margin-top: 1rem; padding: 0.5rem 1.5rem; font-size: 1rem;">Save Profile</button>
+                        <div id="eps-config-anime" style="display: none; flex-direction: column; align-items: flex-start; gap: 0.2rem;">
+                            <label style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Epsilon</label>
+                            <input type="number" id="input-eps-anime" value="0.25" step="0.01" class="glass-input" style="width: 80px; padding: 0.4rem; font-size: 0.9rem;">
+                        </div>
                     </div>
 
-                    <div style="text-align: center; margin: 2rem 0;">
-                        <button id="btn-generate-reading" class="btn-primary btn-oracle">🔮 Consult the Oracle</button>
-                    </div>
-
-                    <div id="oracle-reading-container" class="hidden">
-                        <div id="oracle-reading-content" class="oracle-reading-text"></div>
-                        
-                        <div class="oracle-chat-container">
-                            <div id="oracle-chat-history" class="chat-history"></div>
-                            <div class="chat-input-area" style="display: flex; gap: 0.5rem; margin-top: 1rem;">
-                                <input type="text" id="oracle-chat-input" placeholder="Ask the Oracle a question..." class="glass-input" style="flex: 1;">
-                                <button id="btn-send-chat" class="btn-oracle" style="padding: 0.5rem 1.5rem; font-size: 1rem;">Send</button>
+                    <div id="deep-insights-dashboard" class="hidden insight-widget-card" style="padding: 2.5rem; display: flex; flex-direction: column; gap: 2.5rem;">
+                        <!-- Movie Section -->
+                        <div id="di-movie-section" class="di-domain-section slide-up" style="display: flex; flex-direction: column; gap: 2rem; animation-delay: 0.25s;">
+                            
+                            <div class="slide-up">
+                                <h3 class="widget-title">Taste Breadth</h3>
+                                <p class="widget-value" id="di-movie-breadth-text" style="font-size: 1.2rem;"></p>
                             </div>
-                        </div>
-                    </div>
 
+                            <div class="slide-up" style="animation-delay: 0.1s;">
+                                <h3 class="widget-title">Taste Archetypes</h3>
+                                <div id="di-movie-archetypes-container">
+                                    <!-- Clusters injected here -->
+                                </div>
+                            </div>
+
+                            <div class="slide-up" style="animation-delay: 0.15s;">
+                                <h3 class="widget-title">Taste Evolution</h3>
+                                <p class="widget-value" id="di-movie-evolution-text"></p>
+                            </div>
+
+                            <div>
+                                <h3 class="widget-title">Genres</h3>
+                                <div class="genre-bubble-container" id="di-movie-genres"></div>
+                            </div>
+                            
+                            <div>
+                                <h3 class="widget-title">Themes & Elements</h3>
+                                <div class="genre-bubble-container" id="di-movie-themes"></div>
+                            </div>
+
+                            <div class="di-grid">
+                                <div class="insight-widget-card story-card beloved">
+                                    <h3 class="widget-title">Beloved Stories</h3>
+                                    <p id="di-movie-beloved"></p>
+                                </div>
+                                <div class="insight-widget-card story-card disliked">
+                                    <h3 class="widget-title">Disliked Stories</h3>
+                                    <p id="di-movie-disliked"></p>
+                                </div>
+                            </div>
+
+                            <div class="slide-up" style="margin-top: 1rem; animation-delay: 0.3s; border-top: 1px solid var(--glass-border); padding-top: 2rem;">
+                                <h3 class="widget-title">Viewer Personality</h3>
+                                <p class="widget-value" id="di-movie-personality-text" style="font-size: 1.15rem; font-style: italic;"></p>
+                            </div>
+
+                        </div>
+
+                        <!-- Anime Section -->
+                        <div id="di-anime-section" class="di-domain-section slide-up" style="display: none; flex-direction: column; gap: 2rem; animation-delay: 0.25s;">
+                            
+                            <div class="slide-up">
+                                <h3 class="widget-title">Taste Breadth</h3>
+                                <p class="widget-value" id="di-anime-breadth-text" style="font-size: 1.2rem;"></p>
+                            </div>
+
+                            <div class="slide-up" style="animation-delay: 0.1s;">
+                                <h3 class="widget-title">Taste Archetypes</h3>
+                                <div id="di-anime-archetypes-container">
+                                    <!-- Clusters injected here -->
+                                </div>
+                            </div>
+
+                            <div class="slide-up" style="animation-delay: 0.15s;">
+                                <h3 class="widget-title">Taste Evolution</h3>
+                                <p class="widget-value" id="di-anime-evolution-text"></p>
+                            </div>
+
+                            <div>
+                                <h3 class="widget-title">Genres</h3>
+                                <div class="genre-bubble-container" id="di-anime-genres"></div>
+                            </div>
+                            
+                            <div>
+                                <h3 class="widget-title">Themes & Elements</h3>
+                                <div class="genre-bubble-container" id="di-anime-themes"></div>
+                            </div>
+
+                            <div class="di-grid">
+                                <div class="insight-widget-card story-card beloved">
+                                    <h3 class="widget-title">Beloved Stories</h3>
+                                    <p id="di-anime-beloved"></p>
+                                </div>
+                                <div class="insight-widget-card story-card disliked">
+                                    <h3 class="widget-title">Disliked Stories</h3>
+                                    <p id="di-anime-disliked"></p>
+                                </div>
+                            </div>
+
+                            <div class="slide-up" style="margin-top: 1rem; animation-delay: 0.3s; border-top: 1px solid var(--glass-border); padding-top: 2rem;">
+                                <h3 class="widget-title">Viewer Personality</h3>
+                                <p class="widget-value" id="di-anime-personality-text" style="font-size: 1.15rem; font-style: italic;"></p>
+                            </div>
+
+                        </div>
+
+                    </div>
                 </div>
             </section>
 
@@ -463,6 +532,7 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="js/api.js"></script>
     <script src="js/rater.js"></script>
     <script src="js/ui.js"></script>
