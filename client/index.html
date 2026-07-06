@@ -14,30 +14,68 @@
         <nav class="sidebar">
             <div>
                 <h1 class="brand" style="text-align: center;">🎬 MRE<span class="brand-sub">My Recommendation Engine</span></h1>
-                <div class="domain-toggle-container" style="margin-top: 1rem; margin-bottom: 2rem; display: flex; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 4px;">
+                <ul class="nav-links global-nav" style="margin-top: 1.5rem; margin-bottom: 0; flex-direction: row; gap: 0.5rem;">
+                    <li data-view="profile" style="flex: 1; justify-content: center; padding: 0.6rem 0.2rem;">👤 Profile</li>
+                    <li data-view="chat" style="flex: 1; justify-content: center; padding: 0.6rem 0.2rem;">✨ Chat</li>
+                </ul>
+                <div class="domain-toggle-container" style="margin-top: 0.5rem; margin-bottom: 0.5rem; display: flex; background: rgba(255,255,255,0.05); border-radius: 8px; padding: 4px;">
                     <button id="domain-movie-btn" class="domain-btn active" style="flex: 1; padding: 0.5rem; background: transparent; border: none; color: #fff; cursor: pointer; border-radius: 6px; font-weight: 600; font-family: 'Outfit';">🎬 Movies</button>
                     <button id="domain-anime-btn" class="domain-btn" style="flex: 1; padding: 0.5rem; background: transparent; border: none; color: rgba(255,255,255,0.5); cursor: pointer; border-radius: 6px; font-weight: 600; font-family: 'Outfit';">🌸 Anime</button>
                 </div>
-            </div>
-            <ul class="nav-links">
-                <li class="active" data-view="archive">📺 Archive</li>
-                <li data-view="watchlist">📋 Watchlist</li>
-                <li data-view="add">➕ Log Movie</li>
-                <li data-view="predict">🎯 Predict Score</li>
-                <li data-view="recommendations">💡 Recommendations</li>
-                <li data-view="discover">🔮 Discover</li>
-                <li data-view="insights">📊 Insights</li>
-            </ul>
-            <div class="sidebar-footer">
-                All data stored locally.<br>No cloud. No tracking.
-                <div id="anilist-auth-container" style="margin-top: 1rem;">
-                    <a href="/api/auth/anilist" id="anilist-login-btn" class="secondary-btn" style="display:block; text-align:center; padding: 0.4rem; font-size: 0.8rem; text-decoration: none;">🔗 Link AniList</a>
+                <ul class="nav-links" style="margin-top: 0;">
+                    <li class="active" data-view="archive">📺 Archive</li>
+                    <li data-view="watchlist">📋 Watchlist</li>
+                    <li data-view="add">➕ Log Movie</li>
+                    <li data-view="predict">🎯 Predict Score</li>
+                    <li data-view="recommendations">💡 Recommendations</li>
+                    <li data-view="discover">🔮 Discover</li>
+                    <li data-view="insights">📊 Insights</li>
+                </ul>
+                <div class="sidebar-footer" style="margin-top: 1.5rem; border-top: 1px solid var(--glass-border); padding-top: 1rem;">
+                    <div id="anilist-auth-container">
+                        <a href="/api/auth/anilist" id="anilist-login-btn" class="secondary-btn" style="display:block; text-align:center; padding: 0.4rem; font-size: 0.8rem; text-decoration: none;">🔗 Link AniList</a>
+                    </div>
                 </div>
             </div>
         </nav>
 
         <!-- Main Content Area -->
         <main class="main-content">
+
+            <!-- View: Profile -->
+            <section id="view-profile" class="view-section">
+                <header class="section-header" style="justify-content: space-between;">
+                    <h2>Your Cosmic Profile</h2>
+                    <button id="generate-profile-btn" class="primary-btn" style="padding: 0.5rem 1rem; font-size: 0.9rem;">✨ Generate Full Profile</button>
+                </header>
+                <div class="profile-container">
+                    <!-- Profile Header injected via JS -->
+                    <div id="profile-header-container"></div>
+
+                    <!-- Tiers injected via JS -->
+                    <div id="profile-tiers-container"></div>
+
+                    <!-- Bio box -->
+                    <div class="bg-white border border-gray-200 rounded-xl p-4 mt-5 relative profile-gray-tile" style="margin-top: 2rem;">
+                        <p id="profile-bio-text" class="text-[13px] text-gray-700 italic leading-relaxed" style="font-style: italic; color: var(--text-secondary);">Add a short description of yourself (100 words max)…</p>
+                        <button id="edit-bio-btn" class="absolute top-3 right-3 text-gray-400 text-xs" style="position: absolute; top: 1rem; right: 1rem; background: transparent; border: none; color: var(--text-secondary); cursor: pointer;">✎</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- View: Chat -->
+            <section id="view-chat" class="view-section">
+                <header class="section-header">
+                    <h2>Mystical Assistant</h2>
+                </header>
+                <div class="oracle-chat-container">
+                    <div id="oracle-chat-history" class="chat-history"></div>
+                    <form id="chat-form" class="chat-input-area" style="display: flex; gap: 0.5rem; margin-top: 1rem;">
+                        <input type="text" id="oracle-chat-input" placeholder="Ask the Oracle a question..." class="glass-input" style="flex: 1;" autocomplete="off" required>
+                        <button type="submit" id="btn-send-chat" class="btn-oracle" style="padding: 0.5rem 1.5rem; font-size: 1rem;">Send</button>
+                    </form>
+                </div>
+            </section>
 
             <!-- View: Archive -->
             <section id="view-archive" class="view-section active">
@@ -429,6 +467,36 @@
         </div>
     </div>
 
+    <!-- Edit Profile Modal -->
+    <div id="edit-profile-modal" class="modal-container hidden">
+        <div class="modal-box" style="max-width: 500px; width: 95%;">
+            <button id="close-profile-modal" class="close-btn" title="Close">✕</button>
+            <h2 style="margin-bottom: 1.5rem; font-size:1.4rem;">Edit Profile Data</h2>
+            <form id="edit-profile-form">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="profile-edit-name" class="glass-input" required>
+                </div>
+                <div class="form-group">
+                    <label>Date of Birth</label>
+                    <input type="date" id="profile-edit-dob" class="glass-input">
+                </div>
+                <div class="form-group">
+                    <label>Birth Time (24hr)</label>
+                    <input type="time" id="profile-edit-time" class="glass-input">
+                </div>
+                <div class="form-group">
+                    <label>Birth Location (City or Lat/Long)</label>
+                    <input type="text" id="profile-edit-location" class="glass-input" placeholder="e.g. London, UK">
+                </div>
+                <div style="display:flex; gap:0.75rem; margin-top:1.5rem;">
+                    <button type="submit" class="primary-btn" style="flex:1;">Save Data</button>
+                    <button type="button" id="cancel-profile-modal-btn" class="secondary-btn">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Toast notification -->
     <div id="toast"></div>
 
@@ -537,6 +605,8 @@
     <script src="js/rater.js"></script>
     <script src="js/ui.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="js/profile.js"></script>
+    <script src="js/chat.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

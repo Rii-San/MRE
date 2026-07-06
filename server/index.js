@@ -26,6 +26,7 @@ const importExportRouter = require('./api/importexport');
 const profileRouter = require('./api/profile');
 const deepInsightsRouter = require('./api/deep_insights');
 const authRouter = require('./api/auth');
+const chatRouter = require('./api/chat');
 
 // Shared Parameterized Routes
 app.use('/api/:domain/discover', discoverRouter);
@@ -41,6 +42,7 @@ app.use('/api/import', importExportRouter); // Same router handles POST
 app.use('/api/profile', profileRouter);
 app.use('/api/deep_insights', deepInsightsRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/chat', chatRouter);
 
 const { startSyncLoop, getSyncStatus } = require('./services/sync');
 const { startAnimeSyncLoop, getAnimeSyncStatus } = require('./services/anime_sync');

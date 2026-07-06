@@ -2,8 +2,9 @@ const API_BASE = '/api';
 window.CURRENT_DOMAIN = 'movies';
 // Returns the correct API path segment for the active domain
 function apiUrl(resource) {
-    const globalRoutes = ['export', 'import', 'profile', 'deep_insights'];
-    if (globalRoutes.includes(resource.split('?')[0])) {
+    const globalRoutes = ['export', 'import', 'profile', 'deep_insights', 'auth', 'chat'];
+    const baseResource = resource.split('?')[0].split('/')[0];
+    if (globalRoutes.includes(baseResource)) {
         return `${API_BASE}/${resource}`;
     }
     // Convert 'movies' to 'movie' for consistency on the backend domain parameters if needed?

@@ -60,8 +60,5 @@ router.post('/generate', express.json(), async (req, res) => {
     }
 });
 
-router.post('/chat', async (req, res) => {
-    res.status(400).json({ error: 'Chat feature has been retired in favor of data-driven insights.' });
-});
 
 module.exports = router;

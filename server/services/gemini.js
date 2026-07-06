@@ -162,22 +162,42 @@ IMPORTANT: Complete every section fully. Do not cut off mid-sentence. Keep the t
 }
 
 async function sendChatMessageStreamWithFallback(preprocessorSummary, userContext, history = [], message) {
+    let traitsText = "";
+    if (userContext?.traits) {
+        const allTraits = [
+            ...(userContext.traits.spiritual || []),
+            ...(userContext.traits.popular_psychology || []),
+            ...(userContext.traits.evidence_based || [])
+        ];
+        traitsText = allTraits
+            .filter(t => t.value)
+            .map(t => `- ${t.label || t.key}: ${typeof t.value === 'object' ? JSON.stringify(t.value) : t.value}`)
+            .join("\n");
+    } else {
+        traitsText = `- Vedic Rashi: ${userContext?.vedicZodiac || "Unknown"}\n- Chinese Zodiac: ${userContext?.chineseZodiac || "Unknown"}`;
+    }
+
+    const userName = userContext?.user?.name || userContext?.name || "Unknown Seeker";
+    const selfDesc = userContext?.self_description || "None provided";
+
     const chatSystemInstruction = `${SYSTEM_INSTRUCTION_ORACLE}
 
 CONTEXT — THE SEEKER'S PROFILE:
-Name: ${userContext.name || "Unknown Seeker"}
-Vedic Rashi: ${userContext.vedicZodiac || "Unknown"}
-Chinese Zodiac: ${userContext.chineseZodiac || "Unknown"}
+Name: ${userName}
+Self Description: ${selfDesc}
+
+SEEKER'S TRAITS:
+${traitsText || "None provided"}
 
 CONTEXT — THEIR TASTE SUMMARY:
 ${preprocessorSummary}
 
 CHAT RULES:
 - You are now speaking directly to the seeker in a conversation.
-- Answer their questions based on their taste profile above.
+- Answer their questions based on their taste profile and traits above.
 - Keep responses concise (2-4 short paragraphs max) but ALWAYS complete your thoughts.
 - Never end mid-sentence or mid-paragraph.
-- If they ask about aura colors, zodiac compatibility, or recommendations, weave your answers through the lens of their taste profile.
+- If they ask about aura colors, personality traits, zodiac compatibility, or recommendations, weave your answers through the lens of their taste profile and traits.
 - Stay in character as The Oracle at all times.`;
 
     return await executeWithFallback(async (modelName) => {
@@ -291,5 +311,7 @@ module.exports = {
     generateRecommendationQuery,
     generateClusterLabel,
     generatePlotNarrative,
-    generateDailySpiritualBias
+    generateDailySpiritualBias,
+    executeWithFallback,
+    genAI
 };
