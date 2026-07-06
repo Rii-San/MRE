@@ -3,7 +3,7 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const { generateTasteSummary } = require('../services/preprocessor');
-const { generateTasteProfile, sendChatMessageStreamWithFallback, generateRecommendationQuery } = require('../services/gemini');
+const { sendChatMessageStreamWithFallback } = require('../services/gemini');
 const { getEmbedding } = require('../llm');
 
 const profileService = require('../services/profileService');
@@ -20,22 +20,24 @@ router.post('/generate', express.json(), async (req, res) => {
     try {
         const { movieEps, animeEps } = req.body || {};
         const profile = getUserProfile();
-        const summary = await generateTasteSummary(
+        const result = await generateTasteSummary(
             movieEps ? parseFloat(movieEps) : null, 
             animeEps ? parseFloat(animeEps) : null
         );
+        
+        const summary = result.summary;
+        const tasteData = result.tasteData;
         
         if (!summary || summary.includes('Not enough data')) {
             return res.status(400).json({ error: 'Not enough watched items to generate insights. Log some movies or anime first!' });
         }
         
-        // Generate and cache the recommendation bias
-        let bias = null;
-        try {
-            bias = await generateRecommendationQuery(summary, profile, "Give me a general recommendation bias vector for this user.");
-        } catch (biasErr) {
-            console.warn('[Deep Insights] Bias generation failed (non-fatal):', biasErr.message);
-        }
+        // Generate the mathematical recommendation bias from tasteData
+        const bias = {
+            boost_genres: tasteData.lovedGenres || [],
+            suppress_genres: tasteData.hatedGenres || [],
+            mood_keywords: tasteData.lovedTags || []
+        };
 
         // Generate narrative embedding for scoring
         let narrative_embedding = null;
@@ -48,8 +50,13 @@ router.post('/generate', express.json(), async (req, res) => {
         
         // We no longer generate a Gemini reading. Just use the summary.
         profile.tasteSummary = summary;
-        if (bias) profile.bias = bias;
+        profile.bias = bias;
         if (narrative_embedding) profile.narrative_embedding = narrative_embedding;
+        
+        // Save user epsilon preferences
+        if (movieEps) profile.movieEps = movieEps;
+        if (animeEps) profile.animeEps = animeEps;
+        
         saveUserProfile(profile);
         
         // Return summary so the client can parse and render the widgets

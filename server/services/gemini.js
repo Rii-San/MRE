@@ -126,42 +126,9 @@ function logResponseMeta(response, context, modelName) {
     } catch (e) {}
 }
 
-async function generateTasteProfile(preprocessorSummary, userContext) {
-    const prompt = `The seeker approaches. Here is their profile:
-Name: ${userContext.name || "Unknown Seeker"}
-Vedic Zodiac: ${userContext.vedicZodiac || "Unknown"}
-Chinese Zodiac: ${userContext.chineseZodiac || "Unknown"}
-Self Description: ${userContext.description || "None provided"}
 
-Here is their Taste Summary extracted from their viewing history:
-${preprocessorSummary}
 
-Now, provide a profound reading divided into EXACTLY these three sections. Use markdown H3 headings (###).
-
-### 🎬 The Cinematic Aura
-Analyze their movie tastes. Identify the core emotional themes they seek on the silver screen. Reveal what contradictions live in their viewing patterns. Reference specific genres or themes from their data. (100-120 words)
-
-### ⛩️ The Animated Soul
-Analyze their anime tastes. Reveal what psychological or archetypal needs are fulfilled by their animated journeys. Connect patterns between their favorite shows. (100-120 words)
-
-### 🌌 The Cosmic Convergence
-Synthesize their movie + anime tastes with their astrological signs into a unified "Aesthetic Identity." What kind of soul are they? What do they truly seek through stories? (80-100 words)
-
-IMPORTANT: Complete every section fully. Do not cut off mid-sentence. Keep the total to 280-340 words. Be warm, intuitive, and use simple everyday language.`;
-
-    return await executeWithFallback(async (modelName) => {
-        const model = genAI.getGenerativeModel({
-            model: modelName,
-            systemInstruction: SYSTEM_INSTRUCTION_ORACLE,
-            generationConfig: { maxOutputTokens: 8192, temperature: 1.0, thinkingConfig: { thinkingBudget: 0 } },
-        });
-        const result = await model.generateContent(prompt);
-        logResponseMeta(result.response, 'TasteProfile', modelName);
-        return result.response.text();
-    });
-}
-
-async function sendChatMessageStreamWithFallback(preprocessorSummary, userContext, history = [], message) {
+function formatUserTraits(userContext) {
     let traitsText = "";
     if (userContext?.traits) {
         const allTraits = [
@@ -176,6 +143,11 @@ async function sendChatMessageStreamWithFallback(preprocessorSummary, userContex
     } else {
         traitsText = `- Vedic Rashi: ${userContext?.vedicZodiac || "Unknown"}\n- Chinese Zodiac: ${userContext?.chineseZodiac || "Unknown"}`;
     }
+    return traitsText;
+}
+
+async function sendChatMessageStreamWithFallback(preprocessorSummary, userContext, history = [], message) {
+    const traitsText = formatUserTraits(userContext);
 
     const userName = userContext?.user?.name || userContext?.name || "Unknown Seeker";
     const selfDesc = userContext?.self_description || "None provided";
@@ -211,32 +183,7 @@ CHAT RULES:
     });
 }
 
-async function generateRecommendationQuery(preprocessorSummary, userContext, userPrompt) {
-    const schema = {
-        type: SchemaType.OBJECT,
-        properties: {
-            boost_genres: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: "List of genres to boost/include based on the prompt and user's taste." },
-            suppress_genres: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: "List of genres to strictly exclude or heavily penalize." },
-            mood_keywords: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: "Thematic keywords to match against plot descriptions (e.g., 'dystopia', 'revenge')." },
-            target_domain: { type: SchemaType.STRING, description: "Either 'movie', 'anime', or 'both'. Infer from the user prompt." },
-            explanation: { type: SchemaType.STRING, description: "A short, mystical 1-sentence explanation of why these filters were chosen." }
-        },
-        required: ["boost_genres", "suppress_genres", "mood_keywords", "target_domain", "explanation"]
-    };
 
-    const prompt = `User Profile:\nVedic: ${userContext.vedicZodiac || "Unknown"}, Chinese: ${userContext.chineseZodiac || "Unknown"}\n\nUser's Base Tastes:\n${preprocessorSummary}\n\nUser's Request: "${userPrompt}"\n\nGenerate the JSON query parameters to find the perfect recommendation for them right now.`;
-
-    return await executeWithFallback(async (modelName) => {
-        const model = genAI.getGenerativeModel({
-            model: modelName,
-            systemInstruction: "You are a mystical oracle translating user desires into precise database query parameters based on their cosmic and cinematic profile. Output only valid JSON matching the schema.",
-            generationConfig: { responseMimeType: "application/json", responseSchema: schema, maxOutputTokens: 2048, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } }
-        });
-        const result = await model.generateContent(prompt);
-        logResponseMeta(result.response, 'RecommendationQuery', modelName);
-        return JSON.parse(result.response.text());
-    });
-}
 
 async function generateClusterLabel(titles) {
     return await executeWithFallback(async (modelName) => {
@@ -278,20 +225,20 @@ async function generatePlotNarrative(lovedPlots, hatedPlots) {
     });
 }
 
-async function generateDailySpiritualBias(vedicSign, chineseSign) {
+async function generateDailySpiritualBias(userProfile) {
     const schema = {
         type: SchemaType.OBJECT,
         properties: {
             boost_genres: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: "List of genres to boost today based on the horoscope." },
             suppress_genres: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: "List of genres to avoid today based on the horoscope." },
             mood_keywords: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: "Thematic keywords to match against plot descriptions today." },
-            reading: { type: SchemaType.STRING, description: "A mystical 2-3 sentence daily reading integrating their Vedic and Chinese signs for today." }
+            reading: { type: SchemaType.STRING, description: "A mystical 2-3 sentence daily reading tailored specifically to the seeker's astrological and psychological traits for today." }
         },
         required: ["boost_genres", "suppress_genres", "mood_keywords", "reading"]
     };
 
-    const prompt = `The seeker's Vedic Rashi is ${vedicSign || "Unknown"} and their Chinese Zodiac is ${chineseSign || "Unknown"}.
-Based on the astrological alignment for today, generate a mystical daily reading and the recommendation bias parameters.`;
+    const traitsText = formatUserTraits(userProfile);
+    const prompt = `The seeker's Spiritual and Psychological Profile:\n${traitsText}\n\nBased on the astrological alignment for today and their unique traits, generate a deeply personalized mystical daily reading and the recommendation bias parameters.`;
 
     return await executeWithFallback(async (modelName) => {
         const model = genAI.getGenerativeModel({
@@ -306,9 +253,7 @@ Based on the astrological alignment for today, generate a mystical daily reading
 }
 
 module.exports = {
-    generateTasteProfile,
     sendChatMessageStreamWithFallback,
-    generateRecommendationQuery,
     generateClusterLabel,
     generatePlotNarrative,
     generateDailySpiritualBias,

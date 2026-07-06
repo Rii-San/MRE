@@ -46,7 +46,12 @@
             <section id="view-profile" class="view-section">
                 <header class="section-header" style="justify-content: space-between;">
                     <h2>Your Cosmic Profile</h2>
-                    <button id="generate-profile-btn" class="primary-btn" style="padding: 0.5rem 1rem; font-size: 0.9rem;">✨ Generate Full Profile</button>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <button id="generate-profile-btn" class="primary-btn" style="padding: 0.5rem 1rem; font-size: 0.9rem;">✨ Generate Full Profile</button>
+                        <button id="export-profile-btn" class="secondary-btn" style="padding: 0.5rem; font-size: 0.9rem;" title="Export Profile">⬆</button>
+                        <button id="import-profile-btn" class="secondary-btn" style="padding: 0.5rem; font-size: 0.9rem;" title="Import Profile">⬇</button>
+                        <input type="file" id="import-profile-input" style="display: none;" accept=".json" />
+                    </div>
                 </header>
                 <div class="profile-container">
                     <!-- Profile Header injected via JS -->

@@ -1000,9 +1000,9 @@ predictSearchInput.addEventListener('input', (e) => {
                             <div>Tag match (Sparse): ${preData.raw_cosine_similarity.toFixed(4)}</div>
                             ${preData.dense_similarity ? `<div>Story match (Dense): ${preData.dense_similarity.toFixed(4)}</div>` : ''}
                             ${preData.narrative_bias !== undefined ? `<div>Narrative match: ${preData.narrative_bias > 0 ? '+' : ''}${preData.narrative_bias.toFixed(4)}</div>` : ''}
-                            ${preData.oracle_bias !== undefined ? `<div style="color:var(--accent-gold, #C9A96E);">Oracle Bias: ${preData.oracle_bias > 0 ? '+' : ''}${preData.oracle_bias.toFixed(4)}</div>` : ''}
+                            ${preData.insights_bias !== undefined ? `<div style="color:var(--accent-gold, #C9A96E);">Insights Bias: ${preData.insights_bias > 0 ? '+' : ''}${preData.insights_bias.toFixed(4)}</div>` : ''}
                             ${preData.spiritual_bias !== undefined ? `<div style="color:#d946ef;">Spiritual Bias: ${preData.spiritual_bias > 0 ? '+' : ''}${preData.spiritual_bias.toFixed(4)}</div>` : ''}
-                            ${(preData.dense_similarity || preData.oracle_bias || preData.spiritual_bias || preData.narrative_bias) ? `<div style="font-weight:bold; margin-top:4px;">Blended final score: ${preData.final_similarity.toFixed(4)}</div>` : ''}
+                            ${(preData.dense_similarity || preData.insights_bias || preData.spiritual_bias || preData.narrative_bias) ? `<div style="font-weight:bold; margin-top:4px;">Blended final score: ${preData.final_similarity.toFixed(4)}</div>` : ''}
                             <div style="margin-top:0.4rem; margin-bottom:0.2rem;">Top metadata matches:</div>
                             <ul>${preData.top_features.map(f => `<li>+${f.score.toFixed(4)} &nbsp;${f.rawName}</li>`).join('')}</ul>
                             ${preData.mismatches && preData.mismatches.length > 0 ? `
@@ -1118,7 +1118,7 @@ function renderDiscoverPage() {
             <div>Tag match (Sparse): ${m.raw_cosine_similarity.toFixed(4)}</div>
             ${m.dense_similarity ? `<div>Story match (Dense): ${m.dense_similarity.toFixed(4)}</div>` : ''}
             ${m.narrative_bias !== undefined ? `<div>Narrative match: ${m.narrative_bias > 0 ? '+' : ''}${m.narrative_bias.toFixed(4)}</div>` : ''}
-            ${m.oracle_bias !== undefined ? `<div style="color:var(--accent-gold, #C9A96E);">Oracle Bias: ${m.oracle_bias > 0 ? '+' : ''}${m.oracle_bias.toFixed(4)}</div>` : ''}
+            ${m.insights_bias !== undefined ? `<div style="color:var(--accent-gold, #C9A96E);">Insights Bias: ${m.insights_bias > 0 ? '+' : ''}${m.insights_bias.toFixed(4)}</div>` : ''}
             ${m.spiritual_bias !== undefined ? `<div style="color:#d946ef;">Spiritual Bias: ${m.spiritual_bias > 0 ? '+' : ''}${m.spiritual_bias.toFixed(4)}</div>` : ''}
             <div style="color:var(--accent-primary); margin-top:0.2rem; font-weight:bold;">Blended Score: ${m.final_similarity.toFixed(4)}</div>
             <div style="margin-top:0.4rem; margin-bottom:0.2rem;">Top matching features:</div>
@@ -1239,7 +1239,7 @@ function renderRecommendResults(results) {
             <div>Tag match (Sparse): ${m.raw_cosine_similarity.toFixed(4)}</div>
             ${m.dense_similarity ? `<div>Story match (Dense): ${m.dense_similarity.toFixed(4)}</div>` : ''}
             ${m.narrative_bias !== undefined ? `<div>Narrative match: ${m.narrative_bias > 0 ? '+' : ''}${m.narrative_bias.toFixed(4)}</div>` : ''}
-            ${m.oracle_bias !== undefined ? `<div style="color:var(--accent-gold, #C9A96E);">Oracle Bias: ${m.oracle_bias > 0 ? '+' : ''}${m.oracle_bias.toFixed(4)}</div>` : ''}
+            ${m.insights_bias !== undefined ? `<div style="color:var(--accent-gold, #C9A96E);">Insights Bias: ${m.insights_bias > 0 ? '+' : ''}${m.insights_bias.toFixed(4)}</div>` : ''}
             ${m.spiritual_bias !== undefined ? `<div style="color:#d946ef;">Spiritual Bias: ${m.spiritual_bias > 0 ? '+' : ''}${m.spiritual_bias.toFixed(4)}</div>` : ''}
             <div style="color:var(--accent-primary); margin-top:0.2rem; font-weight:bold;">Blended Score: ${m.final_similarity.toFixed(4)}</div>
             <div style="margin-top:0.4rem; margin-bottom:0.2rem;">Top matching features:</div>
@@ -1658,6 +1658,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/profile');
             if (res.ok) {
                 const data = await res.json();
+                
+                // Load cached epsilons if present
+                if (data.movieEps) {
+                    const input = document.getElementById('input-eps-movie');
+                    if (input) input.value = data.movieEps;
+                }
+                if (data.animeEps) {
+                    const input = document.getElementById('input-eps-anime');
+                    if (input) input.value = data.animeEps;
+                }
+                
                 if (data.tasteSummary) {
                     renderDeepInsights(data.tasteSummary);
                 }
@@ -1695,8 +1706,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 data[currentDomain].dislikedStory = lines[i+1]?.trim() || '';
             } else if (line.startsWith('TASTE EVOLUTION:')) {
                 data[currentDomain].evolution = line.replace('TASTE EVOLUTION:', '').trim();
-            } else if (line.startsWith('OUTLIER FAVORITE:')) {
-                data[currentDomain].outlier = line.replace('OUTLIER FAVORITE:', '').trim();
+            } else if (line.startsWith('OUTLIER FAVORITE')) {
+                data[currentDomain].outlier = line.replace(/OUTLIER FAVORITES?:/, '').trim();
             } else if (line.startsWith('VIEWER PERSONALITY:')) {
                 data[currentDomain].personality = lines[i+1]?.trim() || '';
             } else if (line.startsWith('TASTE ARCHETYPES')) {
@@ -1766,11 +1777,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 arcContainer.innerHTML = `
                     <div class="archetypes-layout" style="display: flex; flex-wrap: wrap; gap: 2.5rem; align-items: center; justify-content: center;">
                         <div class="archetypes-chart-col slide-up" style="flex: 1; min-width: 250px; max-width: 300px; position: relative;">
-                            <canvas id="${canvasId}"></canvas>
-                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; width: 70%;">
+                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; width: 70%; z-index: 0;">
                                 <div style="font-size: 2.5rem; font-weight: 800; line-height: 1; color: var(--text-primary); margin-bottom: 0.2rem;">${maxArch.percent}%</div>
                                 <div style="font-size: 0.85rem; color: var(--text-secondary); line-height: 1.2; word-wrap: break-word;">${maxArch.name}</div>
                             </div>
+                            <canvas id="${canvasId}" style="position: relative; z-index: 1;"></canvas>
                         </div>
                         <div class="archetypes-list-col slide-up" style="flex: 1.5; min-width: 280px; display: flex; flex-direction: column; gap: 0.75rem; animation-delay: 0.1s;">
                             ${displayArchs.map((a, i) => `
@@ -1807,6 +1818,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             }]
                         },
                         options: {
+                            layout: { padding: 15 },
                             cutout: '72%',
                             responsive: true,
                             maintainAspectRatio: true,

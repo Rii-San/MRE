@@ -1,16 +1,39 @@
 const { cosineSimilarity, calculateMatchPercentage } = require('../engine/score');
 
 function applyBiases(finalSimilarity, domain, item, profile) {
-    // Oracle Bias
-    let oracleBiasScore = 0;
+    // Insights Bias
+    let insightsBiasScore = 0;
     try {
         if (profile && profile.bias) {
             const genresStr = (item.genres || []).toString().toLowerCase();
             const plotStr = (item.overview || '').toLowerCase();
             
-            if (profile.bias.boost_genres) profile.bias.boost_genres.forEach(g => { if (genresStr.includes(g.toLowerCase())) oracleBiasScore += 0.05; });
-            if (profile.bias.suppress_genres) profile.bias.suppress_genres.forEach(g => { if (genresStr.includes(g.toLowerCase())) oracleBiasScore -= 0.05; });
-            if (profile.bias.mood_keywords) profile.bias.mood_keywords.forEach(k => { if (plotStr.includes(k.toLowerCase())) oracleBiasScore += 0.03; });
+            let boostMatches = 0;
+            if (profile.bias.boost_genres) {
+                profile.bias.boost_genres.forEach(g => { 
+                    if (genresStr.includes(g.toLowerCase())) {
+                        boostMatches++;
+                        insightsBiasScore += (boostMatches === 1) ? 0.05 : 0.02;
+                    }
+                });
+            }
+            if (profile.bias.suppress_genres) {
+                profile.bias.suppress_genres.forEach(g => { 
+                    if (genresStr.includes(g.toLowerCase())) {
+                        insightsBiasScore -= 0.07;
+                    }
+                });
+            }
+            let moodMatches = 0;
+            if (profile.bias.mood_keywords) {
+                profile.bias.mood_keywords.forEach(k => { 
+                    if (plotStr.includes(k.toLowerCase())) {
+                        moodMatches++;
+                        insightsBiasScore += (moodMatches <= 2) ? 0.02 : 0;
+                    }
+                });
+            }
+            insightsBiasScore = Math.max(-0.22, Math.min(0.22, insightsBiasScore));
         }
     } catch(e) {}
 
@@ -23,18 +46,20 @@ function applyBiases(finalSimilarity, domain, item, profile) {
             const genresStr = (item.genres || []).toString().toLowerCase();
             const plotStr = (item.overview || '').toLowerCase();
             
-            if (daily.bias.boost_genres) daily.bias.boost_genres.forEach(g => { if (genresStr.includes(g.toLowerCase())) spiritualBiasScore += 0.05; });
-            if (daily.bias.suppress_genres) daily.bias.suppress_genres.forEach(g => { if (genresStr.includes(g.toLowerCase())) spiritualBiasScore -= 0.05; });
-            if (daily.bias.mood_keywords) daily.bias.mood_keywords.forEach(k => { if (plotStr.includes(k.toLowerCase())) spiritualBiasScore += 0.03; });
+            if (daily.bias.boost_genres) daily.bias.boost_genres.forEach(g => { if (genresStr.includes(g.toLowerCase())) spiritualBiasScore += 0.02; });
+            if (daily.bias.suppress_genres) daily.bias.suppress_genres.forEach(g => { if (genresStr.includes(g.toLowerCase())) spiritualBiasScore -= 0.03; });
+            if (daily.bias.mood_keywords) daily.bias.mood_keywords.forEach(k => { if (plotStr.includes(k.toLowerCase())) spiritualBiasScore += 0.01; });
             
-            spiritualBiasScore = Math.max(-0.15, Math.min(0.15, spiritualBiasScore));
+            spiritualBiasScore = Math.max(-0.08, Math.min(0.08, spiritualBiasScore));
         }
     } catch(e) {}
 
+    const clampedFinal = Math.max(0, Math.min(1, finalSimilarity + insightsBiasScore + spiritualBiasScore));
+
     return {
-        oracleBiasScore,
+        insightsBiasScore,
         spiritualBiasScore,
-        finalSimilarity: finalSimilarity + oracleBiasScore + spiritualBiasScore
+        finalSimilarity: clampedFinal
     };
 }
 
@@ -80,7 +105,8 @@ function runMMR(candidates, targetCount = 30, lambda = 0.7) {
 }
 
 function computeAdaptiveSimilarity(tag_bias, story_bias, narrative_bias, richness) {
-    let sparseWeight = 0.20 + (0.45 * richness);
+    const s_richness = 3 * Math.pow(richness, 2) - 2 * Math.pow(richness, 3);
+    let sparseWeight = 0.20 + (0.45 * s_richness);
     let denseWeight = 1.0 - sparseWeight;
     
     if (narrative_bias !== 0) {

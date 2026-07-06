@@ -3,6 +3,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const generateBtn = document.getElementById('generate-profile-btn');
     const bioText = document.getElementById('profile-bio-text');
     const editBioBtn = document.getElementById('edit-bio-btn');
+    const exportBtn = document.getElementById('export-profile-btn');
+    const importBtn = document.getElementById('import-profile-btn');
+    const importInput = document.getElementById('import-profile-input');
+
 
     let currentProfile = {};
 
@@ -279,6 +283,53 @@ document.addEventListener('DOMContentLoaded', () => {
             generateBtn.disabled = false;
         });
     });
+
+    if (exportBtn) {
+        exportBtn.addEventListener('click', () => {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentProfile, null, 2));
+            const dlAnchorElem = document.createElement('a');
+            dlAnchorElem.setAttribute("href", dataStr);
+            dlAnchorElem.setAttribute("download", "mre_profile.json");
+            dlAnchorElem.click();
+        });
+    }
+
+    if (importBtn && importInput) {
+        importBtn.addEventListener('click', () => {
+            importInput.click();
+        });
+
+        importInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const importedProfile = JSON.parse(event.target.result);
+                    
+                    fetch(apiUrl('profile'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            user: importedProfile.user,
+                            traits: importedProfile.traits,
+                            self_description: importedProfile.self_description
+                        })
+                    }).then(() => {
+                        currentProfile = importedProfile;
+                        renderProfile();
+                        showToast("Profile imported successfully!");
+                    }).catch(e => showToast("Error saving imported profile: " + e.message, true));
+                } catch (err) {
+                    showToast("Failed to parse profile JSON.", true);
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        });
+    }
+
 
     const editProfileModal = document.getElementById('edit-profile-modal');
     const closeProfileModalBtn = document.getElementById('close-profile-modal');

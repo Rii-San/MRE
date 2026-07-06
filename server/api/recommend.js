@@ -88,7 +88,7 @@ async function handleRecommend(req, res) {
 
     res.json({
         score: percentage, explanation, warning, raw_cosine_similarity: tag_bias, dense_similarity: story_bias,
-        narrative_bias, oracle_bias: biases.oracleBiasScore, spiritual_bias: biases.spiritualBiasScore,
+        narrative_bias, insights_bias: biases.insightsBiasScore, spiritual_bias: biases.spiritualBiasScore,
         final_similarity: finalSimilarity, top_features: topContributions, mismatches, movie: item
     });
 }
@@ -264,7 +264,7 @@ async function handleMovieRecommend(req, res) {
             id: movie.id, title: movie.title, release_year: movie.release_date ? movie.release_date.substring(0,4) : 'N/A',
             tmdb_rating: movie.vote_average, overview: movie.overview, poster_path: movie.poster_path,
             match_score: percentage, raw_cosine_similarity: tag_bias, dense_similarity: story_bias, narrative_bias,
-            oracle_bias: biases.oracleBiasScore, spiritual_bias: biases.spiritualBiasScore,
+            insights_bias: biases.insightsBiasScore, spiritual_bias: biases.spiritualBiasScore,
             final_similarity: finalSimilarity, weight_used: weight,
             top_features: explainMatchDetailed(movieVec, profileVec, featureNames),
             movieVec, movieDenseVec
@@ -389,7 +389,7 @@ async function handleAnimeRecommend(req, res) {
             id: anime.id, title: anime.title.english || anime.title.romaji, release_year: formattedAnime.release_year,
             tmdb_rating: (anime.averageScore || 0) / 10, overview: anime.parsedDescription, poster_path: anime.coverImage?.extraLarge,
             match_score: percentage, raw_cosine_similarity: tag_bias, dense_similarity: story_bias, narrative_bias,
-            oracle_bias: biases.oracleBiasScore, spiritual_bias: biases.spiritualBiasScore,
+            insights_bias: biases.insightsBiasScore, spiritual_bias: biases.spiritualBiasScore,
             final_similarity: finalSimilarity, weight_used: weight,
             top_features: explainMatchDetailed(movieVec, profileVec, featureNames).slice(0, 5),
             movieVec, movieDenseVec

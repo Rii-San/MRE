@@ -39,7 +39,7 @@ async function checkAndFetchDailyReading() {
     // Generate new reading
     try {
         logger.info(`Fetching daily spiritual bias for ${todayDate}...`, 'HoroscopeService');
-        const biasData = await generateDailySpiritualBias(profile.vedicZodiac, profile.chineseZodiac);
+        const biasData = await generateDailySpiritualBias(profile);
         
         const saveData = {
             date: todayDate,

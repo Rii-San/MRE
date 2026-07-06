@@ -221,7 +221,7 @@ function extractCorePlots(allWatched, isAnime, customEps) {
             return { medoids: items.slice(0, 3).map(i => i.desc), outliers: [] };
         }
         
-        const outliers = res.outliers.map(o => o.desc).slice(0, 2); // limit to 2 outliers
+        const outliers = res.outliers.map(o => o.desc).slice(0, 3); // limit to 3 outliers
         return { medoids, outliers, rawClusters: res.clusters };
     };
 
@@ -236,9 +236,14 @@ function extractCorePlots(allWatched, isAnime, customEps) {
     if (likedItems.length >= 5) {
         const res = dbscan(likedItems, targetEps, 3);
         if (res.outliers.length > 0) {
-            const out = res.outliers[0];
-            const title = out[outlierTitleKey] || out[fallbackTitleKey];
-            outlierText = `OUTLIER FAVORITE: Loved "${title}" (Rated ${out.user_rating}) despite it being semantically distant from their core taste.`;
+            const numOutliers = Math.min(3, res.outliers.length);
+            const outlierStrings = [];
+            for (let i = 0; i < numOutliers; i++) {
+                const out = res.outliers[i];
+                const title = out[outlierTitleKey] || out[fallbackTitleKey];
+                outlierStrings.push(`Loved "${title}" (Rated ${out.user_rating})`);
+            }
+            outlierText = `OUTLIER FAVORITES: ${outlierStrings.join(', ')} despite them being semantically distant from their core taste.`;
         }
     }
 
@@ -311,20 +316,27 @@ async function formatClusters(clusters, isAnime, totalVectors) {
 
 async function generateTasteSummary(movieEps = null, animeEps = null) {
     let summary = "";
+    let combinedTasteData = {
+        lovedGenres: [],
+        hatedGenres: [],
+        lovedTags: [],
+        hatedTags: []
+    };
     
     const processDomain = async (dbConn, isAnime, title, customEps) => {
         let domainSummary = `=== THEIR ${title} TASTE ===\n\n`;
+        let tasteFormat = null;
         try {
             const allWatched = getAllWatched(dbConn, isAnime);
             if (allWatched.length === 0) {
-                return domainSummary + `Not enough data to form a vision.\n\n`;
+                return { domainSummary: domainSummary + `Not enough data to form a vision.\n\n`, tasteFormat: null };
             }
 
             const vocab = isAnime ? buildAnimeVocab(dbConn) : buildVocab(dbConn);
             const profile = isAnime ? getAnimeTasteProfile(vocab) : getTasteProfile(dbConn, vocab);
             const names = isAnime ? getAnimeFeatureNames(vocab) : getFeatureNames(vocab);
             
-            const tasteFormat = formatTasteProfile(profile, names);
+            tasteFormat = formatTasteProfile(profile, names);
             const meta = extractMetadata(allWatched, isAnime);
             const drift = calculateTasteDrift(allWatched);
             const notes = allWatched.map(m => m.notes).filter(n => n);
@@ -370,13 +382,34 @@ async function generateTasteSummary(movieEps = null, animeEps = null) {
             console.error(`${title} taste summary error:`, e);
             domainSummary += `The vision is clouded.\n\n`;
         }
-        return domainSummary;
+        return { domainSummary, tasteFormat };
     };
 
-    summary += await processDomain(db, false, "MOVIE", movieEps);
-    summary += await processDomain(animeDb, true, "ANIME", animeEps);
+    const movieResult = await processDomain(db, false, "MOVIE", movieEps);
+    summary += movieResult.domainSummary;
+    if (movieResult.tasteFormat) {
+        combinedTasteData.lovedGenres.push(...movieResult.tasteFormat.lovedGenres);
+        combinedTasteData.hatedGenres.push(...movieResult.tasteFormat.hatedGenres);
+        combinedTasteData.lovedTags.push(...movieResult.tasteFormat.lovedTags);
+        combinedTasteData.hatedTags.push(...movieResult.tasteFormat.hatedTags);
+    }
 
-    return summary;
+    const animeResult = await processDomain(animeDb, true, "ANIME", animeEps);
+    summary += animeResult.domainSummary;
+    if (animeResult.tasteFormat) {
+        combinedTasteData.lovedGenres.push(...animeResult.tasteFormat.lovedGenres);
+        combinedTasteData.hatedGenres.push(...animeResult.tasteFormat.hatedGenres);
+        combinedTasteData.lovedTags.push(...animeResult.tasteFormat.lovedTags);
+        combinedTasteData.hatedTags.push(...animeResult.tasteFormat.hatedTags);
+    }
+
+    // Deduplicate lists
+    combinedTasteData.lovedGenres = [...new Set(combinedTasteData.lovedGenres)];
+    combinedTasteData.hatedGenres = [...new Set(combinedTasteData.hatedGenres)];
+    combinedTasteData.lovedTags = [...new Set(combinedTasteData.lovedTags)];
+    combinedTasteData.hatedTags = [...new Set(combinedTasteData.hatedTags)];
+
+    return { summary, tasteData: combinedTasteData };
 }
 
 function getMedoidSeedIds(dbConnection, isAnime) {
