@@ -185,15 +185,20 @@ CHAT RULES:
 
 
 
-async function generateClusterLabel(titles) {
+async function generateClusterLabelsBatch(clustersTitles) {
+    if (!clustersTitles || clustersTitles.length === 0) return [];
+    
+    const prompt = "Provide a 2-3 word poetic archetype label for each of the following clusters based on their titles. Format exactly as a JSON array of strings in the same order.\n\n" + 
+        clustersTitles.map((t, i) => `Cluster ${i}: ${t}`).join("\n");
+        
     return await executeWithFallback(async (modelName) => {
         const model = genAI.getGenerativeModel({
             model: modelName,
-            systemInstruction: "You are an expert curator. Given a list of media titles, provide a single, poetic 2-to-3 word label that captures their shared vibe or archetype (e.g., 'Grand Mythic Adventures', 'Cozy Slice-of-Life', 'Dark Psychological Thrillers'). Do not use quotes or punctuation. Just the 2-3 words.",
-            generationConfig: { maxOutputTokens: 10, temperature: 0.1, thinkingConfig: { thinkingBudget: 0 } }
+            systemInstruction: "You are an expert curator. Given clusters of media titles, provide a single, poetic 2-to-3 word label that captures their shared vibe. Return ONLY a valid JSON array of strings. Do not include markdown formatting.",
+            generationConfig: { responseMimeType: "application/json", maxOutputTokens: 150, temperature: 0.1, thinkingConfig: { thinkingBudget: 0 } }
         });
-        const result = await model.generateContent(titles);
-        return result.response.text().trim();
+        const result = await model.generateContent(prompt);
+        return JSON.parse(result.response.text());
     });
 }
 
@@ -254,7 +259,7 @@ async function generateDailySpiritualBias(userProfile) {
 
 module.exports = {
     sendChatMessageStreamWithFallback,
-    generateClusterLabel,
+    generateClusterLabelsBatch,
     generatePlotNarrative,
     generateDailySpiritualBias,
     executeWithFallback,

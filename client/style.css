@@ -1015,14 +1015,17 @@ input[type="range"]#discover-depth:active::-webkit-slider-thumb {
     color: var(--accent-color); min-width: 14px; text-align: center;
 }
 
-/* Hide number input spinners for category overrides */
+/* Hide Spinners for manual input overrides */
 .cat-override-input::-webkit-outer-spin-button,
-.cat-override-input::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
+.cat-override-input::-webkit-inner-spin-button,
+.bulk-rating-input::-webkit-outer-spin-button,
+.bulk-rating-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
-.cat-override-input {
-    -moz-appearance: textfield;
+.cat-override-input[type=number],
+.bulk-rating-input[type=number] {
+  -moz-appearance: textfield;
 }
 
 /* Oracle's Den Styles */

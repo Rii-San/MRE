@@ -1,5 +1,6 @@
 const { executeWithFallback, genAI } = require('./gemini');
 const { generateTasteSummary } = require('./preprocessor');
+const { getCachedTasteSummary } = require('../engine/cache');
 
 const PROFILE_PROMPT_TEMPLATE = `You are a personality profile generator. Given a user's birth data, quiz answers, taste data (movies/anime watched, genres, ratings), and an optional self-description, compute all 24 traits below and return ONLY valid JSON matching the schema at the end.
 
@@ -90,8 +91,13 @@ OUTPUT JSON SCHEMA:
 }
 `;
 
+
 async function generate24Traits(profileInput, existingProfile) {
-    const summary = await generateTasteSummary(0.32, 0.25);
+    let summaryText = getCachedTasteSummary();
+    if (!summaryText) {
+        const result = await generateTasteSummary(3, 3);
+        summaryText = result.summary;
+    }
     
     const lockedFields = [];
     const confirmedTraits = {};
@@ -109,7 +115,7 @@ async function generate24Traits(profileInput, existingProfile) {
         .replace('{{birth_time}}', profileInput.user?.birth_time || 'null')
         .replace('{{birth_location}}', profileInput.user?.birth_location || 'null')
         .replace('{{quiz_answers}}', JSON.stringify(profileInput.quiz_answers || {}))
-        .replace('{{taste_data}}', summary || 'No taste data available')
+        .replace('{{taste_data}}', summaryText || 'No taste data available')
         .replace('{{self_description}}', profileInput.self_description || 'null')
         .replace('{{locked_fields}}', JSON.stringify(lockedFields))
         .replace('{{confirmed_traits}}', JSON.stringify(confirmedTraits));

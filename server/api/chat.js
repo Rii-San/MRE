@@ -3,6 +3,7 @@ const router = express.Router();
 const { getProfile } = require('../services/profileService');
 const { generateTasteSummary } = require('../services/preprocessor');
 const { sendChatMessageStreamWithFallback } = require('../services/gemini');
+const { getCachedTasteSummary } = require('../engine/cache');
 
 router.post('/stream', async (req, res) => {
     try {
@@ -12,12 +13,16 @@ router.post('/stream', async (req, res) => {
         }
 
         const profile = getProfile();
-        // Fallback to defaults if missing eps
-        const summary = await generateTasteSummary(0.32, 0.25);
+        // Use cached summary to save time, fallback to generation if missing
+        let summaryText = getCachedTasteSummary();
+        if (!summaryText) {
+            const result = await generateTasteSummary(3, 3);
+            summaryText = result.summary;
+        }
         
         // Pass the entire profile to the oracle chat
         const stream = await sendChatMessageStreamWithFallback(
-            summary, 
+            summaryText, 
             profile, 
             history || [], 
             message

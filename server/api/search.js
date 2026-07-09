@@ -42,40 +42,74 @@ router.get('/', async (req, res) => {
     }
 });
 
-// POST /api/movies/bulk-match (Only for movies right now)
+// POST /api/movies/bulk-match and /api/anime/bulk-match
 router.post('/bulk-match', async (req, res) => {
     try {
-        if (req.params.domain === 'anime') return res.status(400).json({ error: 'Bulk match not implemented for anime' });
-        
         const { titles } = req.body;
         if (!Array.isArray(titles) || titles.length === 0) return res.status(400).json({ error: 'Array of titles required' });
 
-        const TMDB_API_KEY = process.env.TMDB_API_KEY;
         const results = [];
         const batchSize = 5;
         
-        for (let i = 0; i < titles.length; i += batchSize) {
-            const batch = titles.slice(i, i + batchSize);
-            const batchPromises = batch.map(async (query) => {
-                const url = `https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(query)}&api_key=${TMDB_API_KEY}`;
-                const response = await fetchWithRetry(url);
-                const data = await response.json();
-                
-                if (data.results && data.results.length > 0) {
-                    return {
-                        match_query: query, id: data.results[0].id, title: data.results[0].title,
-                        release_year: data.results[0].release_date ? data.results[0].release_date.substring(0, 4) : 'N/A',
-                        poster_path: data.results[0].poster_path
-                    };
+        if (req.params.domain === 'anime') {
+            const graphqlQuery = `
+                query ($search: String) {
+                    Page(page: 1, perPage: 3) {
+                        media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
+                            id title { romaji english } startDate { year } coverImage { large }
+                        }
+                    }
                 }
-                return { match_query: query, error: 'No match found' };
-            });
-            results.push(...(await Promise.all(batchPromises)));
+            `;
+            for (let i = 0; i < titles.length; i += batchSize) {
+                const batch = titles.slice(i, i + batchSize);
+                const batchPromises = batch.map(async (query) => {
+                    const data = await fetchWithAniListRetry(graphqlQuery, { search: query });
+                    if (data && !data.errors && data.data && data.data.Page.media.length > 0) {
+                        return {
+                            match_query: query,
+                            matches: data.data.Page.media.map(r => ({
+                                id: r.id,
+                                title: r.title.english || r.title.romaji,
+                                release_year: r.startDate.year || 'N/A',
+                                poster_path: r.coverImage.large
+                            }))
+                        };
+                    }
+                    return { match_query: query, error: 'No match found' };
+                });
+                results.push(...(await Promise.all(batchPromises)));
+            }
+        } else {
+            const TMDB_API_KEY = process.env.TMDB_API_KEY;
+            
+            for (let i = 0; i < titles.length; i += batchSize) {
+                const batch = titles.slice(i, i + batchSize);
+                const batchPromises = batch.map(async (query) => {
+                    const url = `https://api.themoviedb.org/3/search/movie?query=${encodeURIComponent(query)}&api_key=${TMDB_API_KEY}`;
+                    const response = await fetchWithRetry(url);
+                    const data = await response.json();
+                    
+                    if (data.results && data.results.length > 0) {
+                        return {
+                            match_query: query,
+                            matches: data.results.slice(0, 3).map(r => ({
+                                id: r.id,
+                                title: r.title,
+                                release_year: r.release_date ? r.release_date.substring(0, 4) : 'N/A',
+                                poster_path: r.poster_path
+                            }))
+                        };
+                    }
+                    return { match_query: query, error: 'No match found' };
+                });
+                results.push(...(await Promise.all(batchPromises)));
+            }
         }
         res.json({ matches: results });
     } catch (error) {
         console.error('Bulk match error:', error);
-        res.status(500).json({ error: 'Failed to bulk match movies' });
+        res.status(500).json({ error: 'Failed to bulk match' });
     }
 });
 

@@ -4,8 +4,32 @@ const movieDb = require('../db/db');
 const animeDb = require('../db/anime_db');
 const { fetchAndCacheMovie } = require('../tmdb');
 const { fetchAndCacheAnime, syncRatingToAniList } = require('../anilist');
-const { invalidateCache } = require('../engine/cache');
+const { invalidateCache, incrementPendingItems } = require('../engine/cache');
+const { generateTasteSummary } = require('../services/preprocessor');
 const profileService = require('../services/profileService');
+
+// Background task to trigger re-clustering when staleness threshold is reached
+async function checkAndRecomputeClusters() {
+    const count = incrementPendingItems();
+    if (count >= 10) {
+        console.log(`[Clustering] ${count} new edits detected. Recomputing clusters in background...`);
+        try {
+            const profile = profileService.getProfile();
+            // generateTasteSummary internally calls setCachedTasteSummary but wait, no it doesn't.
+            // Wait, we need to import setCachedTasteSummary and update the cache. Let's do that.
+            const { setCachedTasteSummary } = require('../engine/cache');
+            
+            const result = await generateTasteSummary();
+            
+            if (result && result.summary && !result.summary.includes('Not enough data')) {
+                setCachedTasteSummary(result.summary);
+                console.log('[Clustering] Background recomputation successful.');
+            }
+        } catch (e) {
+            console.error('[Clustering] Background recomputation failed:', e.message);
+        }
+    }
+}
 
 router.get('/', (req, res) => {
     try {
@@ -56,6 +80,7 @@ router.post('/', async (req, res) => {
             }
 
             invalidateCache('anime');
+            checkAndRecomputeClusters().catch(console.error);
             res.json({ success: true, id: result.lastInsertRowid });
         } else {
             const { tmdb_id, user_rating, watch_date, rewatch, notes } = req.body;
@@ -72,6 +97,7 @@ router.post('/', async (req, res) => {
             );
 
             invalidateCache('movie');
+            checkAndRecomputeClusters().catch(console.error);
             res.json({ success: true, id: result.lastInsertRowid });
         }
     } catch (error) {
@@ -89,11 +115,13 @@ router.put('/:id', (req, res) => {
             const info = animeDb.prepare(`UPDATE watched_anime SET user_rating = ?, watch_date = ?, notes = ? WHERE anilist_id = ?`).run(user_rating, watch_date, notes, req.params.id);
             if (info.changes === 0) return res.status(404).json({ error: 'Log not found' });
             invalidateCache('anime');
+            checkAndRecomputeClusters().catch(console.error);
             res.json({ success: true });
         } else {
             const info = movieDb.prepare(`UPDATE watched SET user_rating = ?, watch_date = ?, rewatch = ?, notes = ? WHERE tmdb_id = ?`).run(user_rating, watch_date, rewatch ? 1 : 0, notes, req.params.id);
             if (info.changes === 0) return res.status(404).json({ error: 'Movie not found in archive' });
             invalidateCache('movie');
+            checkAndRecomputeClusters().catch(console.error);
             res.json({ success: true });
         }
     } catch (error) {
@@ -108,11 +136,13 @@ router.delete('/:id', (req, res) => {
             const info = animeDb.prepare('DELETE FROM watched_anime WHERE anilist_id = ?').run(req.params.id);
             if (info.changes === 0) return res.status(404).json({ error: 'Log not found' });
             invalidateCache('anime');
+            checkAndRecomputeClusters().catch(console.error);
             res.json({ success: true });
         } else {
             const info = movieDb.prepare('DELETE FROM watched WHERE tmdb_id = ?').run(req.params.id);
             if (info.changes === 0) return res.status(404).json({ error: 'Movie not found in archive' });
             invalidateCache('movie');
+            checkAndRecomputeClusters().catch(console.error);
             res.json({ success: true });
         }
     } catch (error) {
@@ -122,8 +152,6 @@ router.delete('/:id', (req, res) => {
 });
 
 router.post('/bulk', async (req, res) => {
-    if (req.params.domain === 'anime') return res.status(400).json({ error: 'Bulk not supported for anime yet' });
-    
     const { entries } = req.body;
     if (!Array.isArray(entries) || entries.length === 0) return res.status(400).json({ error: 'Array of entries required' });
 
@@ -131,40 +159,82 @@ router.post('/bulk', async (req, res) => {
     const today = new Date().toISOString().split('T')[0];
 
     try {
-        const movieDataMap = new Map();
-        for (const entry of entries) {
-            if (!entry.tmdb_id || entry.user_rating === undefined || entry.user_rating === '') continue;
-            const checkMovie = movieDb.prepare('SELECT tmdb_rating FROM movies WHERE tmdb_id = ?').get(entry.tmdb_id);
-            if (!checkMovie) {
-                try {
-                    const movieInfo = await fetchAndCacheMovie(entry.tmdb_id);
-                    movieDataMap.set(entry.tmdb_id, movieInfo.tmdb_rating);
-                } catch (e) { movieDataMap.set(entry.tmdb_id, null); }
-            } else {
-                movieDataMap.set(entry.tmdb_id, checkMovie.tmdb_rating);
+        if (req.params.domain === 'anime') {
+            const animeDataMap = new Map();
+            for (const entry of entries) {
+                const anilist_id = entry.tmdb_id; // Frontend passes tmdb_id
+                if (!anilist_id || entry.user_rating === undefined || entry.user_rating === '') continue;
+                if (!animeDb.prepare('SELECT average_score FROM anime WHERE anilist_id = ?').get(anilist_id)) {
+                    try {
+                        await fetchAndCacheAnime(anilist_id);
+                    } catch (e) { }
+                }
             }
-        }
 
-        imported = movieDb.transaction(() => {
-            let count = 0;
+            imported = animeDb.transaction(() => {
+                let count = 0;
+                for (const entry of entries) {
+                    const anilist_id = entry.tmdb_id;
+                    if (!anilist_id || entry.user_rating === undefined || entry.user_rating === '') continue;
+                    
+                    if (animeDb.prepare('SELECT id FROM watched_anime WHERE anilist_id = ?').get(anilist_id)) {
+                        animeDb.prepare('UPDATE watched_anime SET user_rating = ? WHERE anilist_id = ?').run(entry.user_rating, anilist_id);
+                    } else {
+                        animeDb.prepare(`INSERT INTO watched_anime (anilist_id, user_rating, watch_date, notes) VALUES (?, ?, ?, ?)`).run(anilist_id, entry.user_rating, today, null);
+                    }
+                    count++;
+                }
+                return count;
+            })();
+
+            if (imported > 0) {
+                invalidateCache('anime');
+                for (let i = 0; i < imported; i++) {
+                    checkAndRecomputeClusters().catch(console.error);
+                }
+            }
+            res.json({ success: true, imported });
+        } else {
+            const movieDataMap = new Map();
             for (const entry of entries) {
                 if (!entry.tmdb_id || entry.user_rating === undefined || entry.user_rating === '') continue;
-                const tmdb_rating = movieDataMap.get(entry.tmdb_id);
-                if (tmdb_rating === null || tmdb_rating === undefined) continue;
-
-                const rating_diff = parseFloat(entry.user_rating) - tmdb_rating;
-                if (movieDb.prepare('SELECT id FROM watched WHERE tmdb_id = ?').get(entry.tmdb_id)) {
-                    movieDb.prepare('UPDATE watched SET user_rating = ?, rating_diff = ? WHERE tmdb_id = ?').run(entry.user_rating, rating_diff, entry.tmdb_id);
+                const checkMovie = movieDb.prepare('SELECT tmdb_rating FROM movies WHERE tmdb_id = ?').get(entry.tmdb_id);
+                if (!checkMovie) {
+                    try {
+                        const movieInfo = await fetchAndCacheMovie(entry.tmdb_id);
+                        movieDataMap.set(entry.tmdb_id, movieInfo.tmdb_rating);
+                    } catch (e) { movieDataMap.set(entry.tmdb_id, null); }
                 } else {
-                    movieDb.prepare(`INSERT INTO watched (tmdb_id, user_rating, rating_diff, watch_date, rewatch, notes) VALUES (?, ?, ?, ?, ?, ?)`).run(entry.tmdb_id, entry.user_rating, rating_diff, today, 0, null);
+                    movieDataMap.set(entry.tmdb_id, checkMovie.tmdb_rating);
                 }
-                count++;
             }
-            return count;
-        })();
 
-        if (imported > 0) invalidateCache('movie');
-        res.json({ success: true, imported });
+            imported = movieDb.transaction(() => {
+                let count = 0;
+                for (const entry of entries) {
+                    if (!entry.tmdb_id || entry.user_rating === undefined || entry.user_rating === '') continue;
+                    const tmdb_rating = movieDataMap.get(entry.tmdb_id);
+                    if (tmdb_rating === null || tmdb_rating === undefined) continue;
+
+                    const rating_diff = parseFloat(entry.user_rating) - tmdb_rating;
+                    if (movieDb.prepare('SELECT id FROM watched WHERE tmdb_id = ?').get(entry.tmdb_id)) {
+                        movieDb.prepare('UPDATE watched SET user_rating = ?, rating_diff = ? WHERE tmdb_id = ?').run(entry.user_rating, rating_diff, entry.tmdb_id);
+                    } else {
+                        movieDb.prepare(`INSERT INTO watched (tmdb_id, user_rating, rating_diff, watch_date, rewatch, notes) VALUES (?, ?, ?, ?, ?, ?)`).run(entry.tmdb_id, entry.user_rating, rating_diff, today, 0, null);
+                    }
+                    count++;
+                }
+                return count;
+            })();
+
+            if (imported > 0) {
+                invalidateCache('movie');
+                for (let i = 0; i < imported; i++) {
+                    checkAndRecomputeClusters().catch(console.error);
+                }
+            }
+            res.json({ success: true, imported });
+        }
     } catch (error) {
         console.error('Bulk save error:', error);
         res.status(500).json({ error: 'Failed to save bulk ratings' });

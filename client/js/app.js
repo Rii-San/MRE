@@ -246,18 +246,18 @@ document.addEventListener('DOMContentLoaded', () => {
         // Toggle Deep Insights Domain Visibility
         const diMovieSec = document.getElementById('di-movie-section');
         const diAnimeSec = document.getElementById('di-anime-section');
-        const epsConfigMovie = document.getElementById('eps-config-movie');
-        const epsConfigAnime = document.getElementById('eps-config-anime');
+        const clusterConfigMovie = document.getElementById('cluster-config-movie');
+        const clusterConfigAnime = document.getElementById('cluster-config-anime');
         if (domain === 'movies') {
             if(diMovieSec) { diMovieSec.style.display = 'flex'; diMovieSec.classList.add('active'); }
             if(diAnimeSec) { diAnimeSec.style.display = 'none'; diAnimeSec.classList.remove('active'); }
-            if(epsConfigMovie) epsConfigMovie.style.display = 'flex';
-            if(epsConfigAnime) epsConfigAnime.style.display = 'none';
+            if(clusterConfigMovie) clusterConfigMovie.style.display = 'flex';
+            if(clusterConfigAnime) clusterConfigAnime.style.display = 'none';
         } else {
             if(diMovieSec) { diMovieSec.style.display = 'none'; diMovieSec.classList.remove('active'); }
             if(diAnimeSec) { diAnimeSec.style.display = 'flex'; diAnimeSec.classList.add('active'); }
-            if(epsConfigMovie) epsConfigMovie.style.display = 'none';
-            if(epsConfigAnime) epsConfigAnime.style.display = 'flex';
+            if(clusterConfigMovie) clusterConfigMovie.style.display = 'none';
+            if(clusterConfigAnime) clusterConfigAnime.style.display = 'flex';
         }
         
         // Restore per-domain genre from saved state
@@ -1493,6 +1493,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (openBulkLogBtn) {
         openBulkLogBtn.addEventListener('click', () => {
+            const titleEl = document.getElementById('bulk-log-title');
+            const descEl = document.getElementById('bulk-log-desc');
+            const inputEl = document.getElementById('bulk-list-input');
+            
+            if (window.CURRENT_DOMAIN === 'anime') {
+                titleEl.textContent = 'Bulk Log Anime';
+                descEl.textContent = 'Enter a comma-separated list of anime titles. The engine will find the closest matches on AniList.';
+                inputEl.placeholder = 'Attack on Titan, Naruto, Demon Slayer...';
+            } else {
+                titleEl.textContent = 'Bulk Log Movies';
+                descEl.textContent = 'Enter a comma-separated list of movie titles. The engine will find the closest matches on TMDB.';
+                inputEl.placeholder = 'The Matrix, Inception, Spiderman 2...';
+            }
+            
             bulkLogModal.classList.remove('hidden');
             bulkStep1.classList.remove('hidden');
             bulkStep2.classList.add('hidden');
@@ -1514,7 +1528,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         bulkFetchBtn.addEventListener('click', async () => {
             const rawText = bulkListInput.value;
-            const titles = rawText.split('\n').map(t => t.trim()).filter(t => t.length > 0);
+            const titles = rawText.split(',').map(t => t.trim()).filter(t => t.length > 0);
             
             if (titles.length === 0) return;
 
@@ -1522,7 +1536,7 @@ document.addEventListener('DOMContentLoaded', () => {
             bulkFetchBtn.disabled = true;
 
             try {
-                const res = await fetch(apiUrl('search/bulk-match'), {
+                const res = await fetch(apiUrl(`search/bulk-match`), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ titles })
@@ -1533,29 +1547,30 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentBulkMatches = data.matches;
 
                 // Render Step 2
-                bulkMatchGrid.innerHTML = currentBulkMatches.map((m, idx) => {
-                    if (m.error) {
+                bulkMatchGrid.innerHTML = currentBulkMatches.map((queryMatch, queryIdx) => {
+                    if (queryMatch.error) {
                         return `
-                        <div class="bulk-match-item" style="border-color:#ef4444;">
-                            <div style="width:45px; height:68px; background:rgba(239,68,68,0.2); border-radius:6px; display:flex; align-items:center; justify-content:center;">❌</div>
-                            <div class="bulk-match-info">
-                                <h4 style="color:#ef4444;">${m.match_query}</h4>
-                                <div style="font-size:0.85rem; color:#888;">No match found</div>
-                            </div>
+                        <div class="bulk-match-item" style="border: 1px solid #ef4444; border-radius: 8px; padding: 1rem;">
+                            <div style="font-size:0.75rem; color:#ef4444; text-transform:uppercase; margin-bottom: 0.5rem;">Searched: "${queryMatch.match_query}"</div>
+                            <div style="color:#ef4444;">No match found</div>
                         </div>`;
                     }
 
+                    const optionsHtml = queryMatch.matches.map((m, optionIdx) => `
+                        <div class="bulk-match-option" style="display: flex; gap: 0.5rem; align-items: center; background: rgba(255,255,255,0.02); padding: 0.5rem; border-radius: 6px; margin-bottom: 0.5rem;">
+                            ${m.poster_path ? `<img src="${m.poster_path.startsWith('http') ? m.poster_path : `https://image.tmdb.org/t/p/w92${m.poster_path}`}" style="width: 35px; border-radius: 4px;">` : '<div style="width:35px; height:52px; background:#333; border-radius:4px;"></div>'}
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="font-size: 0.85rem; font-weight: 600; white-space: normal; line-height: 1.2; margin-bottom: 0.2rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;" title="${m.title.replace(/"/g, '&quot;')}">${m.title}</div>
+                                <div style="font-size:0.75rem; color:#888;">${m.release_year}</div>
+                            </div>
+                            <input type="number" class="glass-input bulk-rating-input" data-query-idx="${queryIdx}" data-option-idx="${optionIdx}" min="0" max="10" step="0.5" placeholder="0-10" style="width: 60px; padding: 0.3rem; text-align: center; font-size: 0.8rem;">
+                        </div>
+                    `).join('');
+
                     return `
-                    <div class="bulk-match-item">
-                        ${m.poster_path ? `<img src="https://image.tmdb.org/t/p/w92${m.poster_path}">` : '<div style="width:45px; height:68px; background:#333; border-radius:6px;"></div>'}
-                        <div class="bulk-match-info">
-                            <div style="font-size:0.75rem; color:var(--text-secondary); text-transform:uppercase;">Searched: "${m.match_query}"</div>
-                            <h4>${m.title}</h4>
-                            <div style="font-size:0.85rem; color:#888;">${m.release_year}</div>
-                        </div>
-                        <div class="bulk-match-rating">
-                            <input type="number" class="glass-input bulk-rating-input" data-idx="${idx}" min="0" max="10" step="0.5" placeholder="0-10" style="width:100%; padding:0.5rem; text-align:center;">
-                        </div>
+                    <div class="bulk-match-group" style="background: rgba(0,0,0,0.2); border: 1px solid var(--glass-border); border-radius: 8px; padding: 1rem;">
+                        <div style="font-size:0.75rem; color:var(--text-secondary); text-transform:uppercase; margin-bottom: 0.8rem; font-weight: 600;">Searched: "${queryMatch.match_query}"</div>
+                        ${optionsHtml}
                     </div>`;
                 }).join('');
 
@@ -1582,8 +1597,9 @@ document.addEventListener('DOMContentLoaded', () => {
             inputs.forEach(input => {
                 const val = input.value.trim();
                 if (val !== '') {
-                    const idx = parseInt(input.dataset.idx);
-                    const match = currentBulkMatches[idx];
+                    const qIdx = parseInt(input.dataset.queryIdx);
+                    const oIdx = parseInt(input.dataset.optionIdx);
+                    const match = currentBulkMatches[qIdx].matches[oIdx];
                     entries.push({
                         tmdb_id: match.id,
                         user_rating: parseFloat(val)
@@ -1659,15 +1675,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (res.ok) {
                 const data = await res.json();
                 
-                // Load cached epsilons if present
-                if (data.movieEps) {
-                    const input = document.getElementById('input-eps-movie');
-                    if (input) input.value = data.movieEps;
-                }
-                if (data.animeEps) {
-                    const input = document.getElementById('input-eps-anime');
-                    if (input) input.value = data.animeEps;
-                }
+                // Profile is cached
                 
                 if (data.tasteSummary) {
                     renderDeepInsights(data.tasteSummary);
@@ -1919,14 +1927,14 @@ document.addEventListener('DOMContentLoaded', () => {
             btnGenerateReading.textContent = "✨ Computing Profile...";
             btnGenerateReading.disabled = true;
             
-            const movieEps = document.getElementById('input-eps-movie') ? document.getElementById('input-eps-movie').value : null;
-            const animeEps = document.getElementById('input-eps-anime') ? document.getElementById('input-eps-anime').value : null;
+            const movieMinCluster = document.getElementById('input-min-cluster-movie')?.value || 3;
+            const animeMinCluster = document.getElementById('input-min-cluster-anime')?.value || 3;
             
             try {
                 const res = await fetch('/api/deep_insights/generate', { 
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ movieEps, animeEps })
+                    body: JSON.stringify({ movieMinCluster, animeMinCluster })
                 });
                 const data = await res.json();
                 if (data.summary) {

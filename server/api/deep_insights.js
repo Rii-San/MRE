@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { generateTasteSummary } = require('../services/preprocessor');
 const { sendChatMessageStreamWithFallback } = require('../services/gemini');
+const { setCachedTasteSummary } = require('../engine/cache');
 const { getEmbedding } = require('../llm');
 
 const profileService = require('../services/profileService');
@@ -18,12 +19,8 @@ function saveUserProfile(profile) {
 
 router.post('/generate', express.json(), async (req, res) => {
     try {
-        const { movieEps, animeEps } = req.body || {};
         const profile = getUserProfile();
-        const result = await generateTasteSummary(
-            movieEps ? parseFloat(movieEps) : null, 
-            animeEps ? parseFloat(animeEps) : null
-        );
+        const result = await generateTasteSummary();
         
         const summary = result.summary;
         const tasteData = result.tasteData;
@@ -53,9 +50,11 @@ router.post('/generate', express.json(), async (req, res) => {
         profile.bias = bias;
         if (narrative_embedding) profile.narrative_embedding = narrative_embedding;
         
-        // Save user epsilon preferences
-        if (movieEps) profile.movieEps = movieEps;
-        if (animeEps) profile.animeEps = animeEps;
+        profile.tasteSummary = result.summary;
+        profile.tasteData = result.tasteData;
+        
+        // Cache the taste summary for reuse by chat and profile generation
+        setCachedTasteSummary(summary);
         
         saveUserProfile(profile);
         

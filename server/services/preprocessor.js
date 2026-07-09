@@ -4,6 +4,7 @@ const { buildVocab, getFeatureNames, buildAnimeVocab, getAnimeFeatureNames } = r
 const { getTasteProfile, getAnimeTasteProfile } = require('../engine/score');
 const natural = require('natural');
 const { generateClusterLabel, generatePlotNarrative } = require('./gemini');
+const { optimalKMeans, cosineDist } = require('./kmeans');
 
 function analyzeSentiment(notes) {
     if (!notes || notes.length === 0) return "Neutral";
@@ -77,72 +78,7 @@ function formatTasteProfile(profileVec, featureNames) {
     };
 }
 
-function cosineDist(v1, v2) {
-    let dot = 0, norm1 = 0, norm2 = 0;
-    for(let i=0; i<v1.length; i++) {
-        dot += v1[i]*v2[i];
-        norm1 += v1[i]*v1[i];
-        norm2 += v2[i]*v2[i];
-    }
-    if (norm1 === 0 || norm2 === 0) return 1;
-    return 1 - (dot / (Math.sqrt(norm1) * Math.sqrt(norm2)));
-}
-
-function dbscan(items, eps = 0.32, minPts = 3) {
-    const C = [];
-    const noise = [];
-    const visited = new Set();
-    const clusterAssigned = new Set();
-    
-    const getNeighbors = (idx) => {
-        const neighbors = [];
-        for(let i=0; i<items.length; i++) {
-            if (cosineDist(items[idx].vec, items[i].vec) <= eps) {
-                neighbors.push(i);
-            }
-        }
-        return neighbors;
-    };
-    
-    for(let i=0; i<items.length; i++) {
-        if (visited.has(i)) continue;
-        visited.add(i);
-        const neighbors = getNeighbors(i);
-        
-        if (neighbors.length < minPts) {
-            noise.push(i);
-        } else {
-            const cluster = [];
-            C.push(cluster);
-            const seedSet = [...neighbors];
-            
-            while(seedSet.length > 0) {
-                const q = seedSet.pop();
-                if (!visited.has(q)) {
-                    visited.add(q);
-                    const qNeighbors = getNeighbors(q);
-                    if (qNeighbors.length >= minPts) {
-                        for(let qn of qNeighbors) {
-                            if (!seedSet.includes(qn) && !visited.has(qn)) {
-                                seedSet.push(qn);
-                            }
-                        }
-                    }
-                }
-                if (!clusterAssigned.has(q)) {
-                    clusterAssigned.add(q);
-                    cluster.push(q);
-                }
-            }
-        }
-    }
-    const actualNoise = noise.filter(i => !clusterAssigned.has(i));
-    
-    return {
-        clusters: C.map(indices => indices.map(i => items[i])),
-        outliers: actualNoise.map(i => items[i])
-    };
-}
+// cosineDist and clustering are now imported from hdbscan.js
 
 function getClusterRepresentatives(clusterItems, count = 3) {
     if (clusterItems.length === 0) return [];
@@ -185,7 +121,7 @@ function getClusterRepresentatives(clusterItems, count = 3) {
     return reps;
 }
 
-function extractCorePlots(allWatched, isAnime, customEps) {
+function extractCorePlots(allWatched, isAnime) {
     const descCol = isAnime ? 'description' : 'overview';
     
     const prepareItems = (thresholdFn) => {
@@ -207,44 +143,42 @@ function extractCorePlots(allWatched, isAnime, customEps) {
     const likedItems = prepareItems(r => r >= 8.0);
     const dislikedItems = prepareItems(r => r <= 4.0);
 
-    const targetEps = customEps || (isAnime ? 0.25 : 0.32);
     const processSet = (items) => {
-        if (items.length === 0) return { medoids: [], outliers: [] };
-        if (items.length < 5) return { medoids: items.map(i => i.desc), outliers: [] };
+        if (items.length === 0) return { medoids: [], outliers: [], rawClusters: [], rawOutliers: [] };
+        if (items.length < 3) return { medoids: items.map(i => i.desc), outliers: [], rawClusters: [], rawOutliers: [] };
         
-        const res = dbscan(items, targetEps, 3);
+        // Single K-Means call — dynamically selects best k to balance clusters and detect outliers
+        const res = optimalKMeans(items);
+
         const medoids = res.clusters.flatMap(c => getClusterRepresentatives(c)).map(m => m.desc);
         
-        // If DBSCAN found no clusters (too sparse), fallback to top 3 items
+        // If K-Means found no clusters, fallback to top 3 items
         if (medoids.length === 0) {
-            items.sort((a, b) => isAnime ? (b.user_rating - a.user_rating) : (b.user_rating - a.user_rating)); // wait, already sorted if we do b-a
-            return { medoids: items.slice(0, 3).map(i => i.desc), outliers: [] };
+            items.sort((a, b) => b.user_rating - a.user_rating);
+            return { medoids: items.slice(0, 3).map(i => i.desc), outliers: [], rawClusters: [], rawOutliers: [] };
         }
         
         const outliers = res.outliers.map(o => o.desc).slice(0, 3); // limit to 3 outliers
-        return { medoids, outliers, rawClusters: res.clusters };
+        return { medoids, outliers, rawClusters: res.clusters, rawOutliers: res.outliers };
     };
 
     const liked = processSet(likedItems);
     const disliked = processSet(dislikedItems);
     
-    // Also prepare outliers text for the summary output
+    // Prepare outliers text for the summary output
     const outlierTitleKey = isAnime ? 'title_english' : 'title';
     const fallbackTitleKey = isAnime ? 'title_romaji' : 'title';
     let outlierText = null;
     
-    if (likedItems.length >= 5) {
-        const res = dbscan(likedItems, targetEps, 3);
-        if (res.outliers.length > 0) {
-            const numOutliers = Math.min(3, res.outliers.length);
-            const outlierStrings = [];
-            for (let i = 0; i < numOutliers; i++) {
-                const out = res.outliers[i];
-                const title = out[outlierTitleKey] || out[fallbackTitleKey];
-                outlierStrings.push(`Loved "${title}" (Rated ${out.user_rating})`);
-            }
-            outlierText = `OUTLIER FAVORITES: ${outlierStrings.join(', ')} despite them being semantically distant from their core taste.`;
+    if (liked.rawOutliers && liked.rawOutliers.length > 0) {
+        const numOutliers = Math.min(3, liked.rawOutliers.length);
+        const outlierStrings = [];
+        for (let i = 0; i < numOutliers; i++) {
+            const out = liked.rawOutliers[i];
+            const title = out[outlierTitleKey] || out[fallbackTitleKey];
+            outlierStrings.push(`Loved "${title}" (Rated ${out.user_rating})`);
         }
+        outlierText = `OUTLIER FAVORITES: ${outlierStrings.join(', ')} despite them being semantically distant from their core taste.`;
     }
 
     return { likedPlots: [...liked.medoids, ...liked.outliers], dislikedPlots: disliked.medoids, outlierText, likedClusters: liked.rawClusters };
@@ -286,16 +220,28 @@ function calculateTasteDrift(allWatched) {
 async function formatClusters(clusters, isAnime, totalVectors) {
     if (!clusters || clusters.length === 0) return null;
     
-    const formattedClusters = await Promise.all(clusters.map(async (c) => {
+    // Sort clusters and prepare titles for batch generation
+    const preparedClusters = clusters.map(c => {
         c.sort((a, b) => b.user_rating - a.user_rating);
         const top5Titles = c.slice(0, 5).map(x => isAnime ? (x.title_english || x.title_romaji) : x.title).join(', ');
-        
-        let label = "Distinctive Taste";
-        try {
-            label = await generateClusterLabel(top5Titles);
-        } catch(e) {
+        const top3Titles = c.slice(0, 3).map(x => isAnime ? (x.title_english || x.title_romaji) : x.title).join(', ');
+        const percentage = Math.round((c.length / totalVectors) * 100);
+        return { c, top5Titles, top3Titles, percentage };
+    });
+
+    let labels = [];
+    try {
+        const { generateClusterLabelsBatch } = require('./gemini');
+        labels = await generateClusterLabelsBatch(preparedClusters.map(pc => pc.top5Titles));
+    } catch(e) {
+        console.warn(`[Preprocessor] Batch label generation failed: ${e.message}`);
+    }
+
+    const formattedClusters = preparedClusters.map((pc, idx) => {
+        let label = labels[idx];
+        if (!label) {
             const genreCounts = {};
-            c.forEach(item => {
+            pc.c.forEach(item => {
                 try {
                     if (item.genres) {
                         JSON.parse(item.genres).forEach(g => { genreCounts[g] = (genreCounts[g] || 0) + 1; });
@@ -303,18 +249,16 @@ async function formatClusters(clusters, isAnime, totalVectors) {
                 } catch(e) {}
             });
             const topGenre = Object.entries(genreCounts).sort((a, b) => b[1] - a[1])[0];
-            if (topGenre) label = topGenre[0] + " Archetype";
+            label = topGenre ? topGenre[0] + " Archetype" : "Distinctive Taste";
         }
         
-        const percentage = Math.round((c.length / totalVectors) * 100);
-        const top3Titles = c.slice(0, 3).map(x => isAnime ? (x.title_english || x.title_romaji) : x.title).join(', ');
-        return ` - ${label} (${percentage}%): e.g., ${top3Titles}`;
-    }));
+        return ` - ${label} (${pc.percentage}%): e.g., ${pc.top3Titles}`;
+    });
 
     return formattedClusters;
 }
 
-async function generateTasteSummary(movieEps = null, animeEps = null) {
+async function generateTasteSummary() {
     let summary = "";
     let combinedTasteData = {
         lovedGenres: [],
@@ -323,7 +267,7 @@ async function generateTasteSummary(movieEps = null, animeEps = null) {
         hatedTags: []
     };
     
-    const processDomain = async (dbConn, isAnime, title, customEps) => {
+    const processDomain = async (dbConn, isAnime, title) => {
         let domainSummary = `=== THEIR ${title} TASTE ===\n\n`;
         let tasteFormat = null;
         try {
@@ -341,8 +285,8 @@ async function generateTasteSummary(movieEps = null, animeEps = null) {
             const drift = calculateTasteDrift(allWatched);
             const notes = allWatched.map(m => m.notes).filter(n => n);
             
-            // Extract medoids via DBSCAN
-            const { likedPlots, dislikedPlots, outlierText, likedClusters } = extractCorePlots(allWatched, isAnime, customEps);
+            // Extract medoids via K-Means
+            const { likedPlots, dislikedPlots, outlierText, likedClusters } = extractCorePlots(allWatched, isAnime);
             
             // Generate Narrative via Gemini
             let narrative = { likedSentence: "Stories that align with their aesthetic.", dislikedSentence: "Stories that clash with their preferences." };
@@ -385,7 +329,7 @@ async function generateTasteSummary(movieEps = null, animeEps = null) {
         return { domainSummary, tasteFormat };
     };
 
-    const movieResult = await processDomain(db, false, "MOVIE", movieEps);
+    const movieResult = await processDomain(db, false, "MOVIE");
     summary += movieResult.domainSummary;
     if (movieResult.tasteFormat) {
         combinedTasteData.lovedGenres.push(...movieResult.tasteFormat.lovedGenres);
@@ -394,7 +338,7 @@ async function generateTasteSummary(movieEps = null, animeEps = null) {
         combinedTasteData.hatedTags.push(...movieResult.tasteFormat.hatedTags);
     }
 
-    const animeResult = await processDomain(animeDb, true, "ANIME", animeEps);
+    const animeResult = await processDomain(animeDb, true, "ANIME");
     summary += animeResult.domainSummary;
     if (animeResult.tasteFormat) {
         combinedTasteData.lovedGenres.push(...animeResult.tasteFormat.lovedGenres);
@@ -429,10 +373,9 @@ function getMedoidSeedIds(dbConnection, isAnime) {
         }
     });
     
-    if (items.length < 5) return items.sort((a,b) => b.user_rating - a.user_rating).slice(0, 10).map(i => i.id);
+    if (items.length < 3) return items.sort((a,b) => b.user_rating - a.user_rating).slice(0, 10).map(i => i.id);
     
-    const targetEps = isAnime ? 0.25 : 0.32;
-    const res = dbscan(items, targetEps, 3);
+    const res = optimalKMeans(items);
     const medoids = res.clusters.flatMap(c => getClusterRepresentatives(c)).map(m => m.id);
     
     if (medoids.length === 0) return items.sort((a,b) => b.user_rating - a.user_rating).slice(0, 10).map(i => i.id);

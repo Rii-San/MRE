@@ -321,14 +321,7 @@
                 <div id="insight-tab-oracle" class="insight-tab-content oracle-den" style="display: none;">
                     <div style="text-align: center; margin: 1rem 0 2rem 0; display: flex; justify-content: center; align-items: center; gap: 1rem;">
                         <button id="btn-generate-reading" class="primary-btn" style="padding: 0.85rem 2.5rem; font-size: 1.15rem; border-radius: 30px; letter-spacing: 0.5px;">✨ Compute Taste Profile</button>
-                        <div id="eps-config-movie" style="display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem;">
-                            <label style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Epsilon</label>
-                            <input type="number" id="input-eps-movie" value="0.32" step="0.01" class="glass-input" style="width: 80px; padding: 0.4rem; font-size: 0.9rem;">
-                        </div>
-                        <div id="eps-config-anime" style="display: none; flex-direction: column; align-items: flex-start; gap: 0.2rem;">
-                            <label style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Epsilon</label>
-                            <input type="number" id="input-eps-anime" value="0.25" step="0.01" class="glass-input" style="width: 80px; padding: 0.4rem; font-size: 0.9rem;">
-                        </div>
+
                     </div>
 
                     <div id="deep-insights-dashboard" class="hidden insight-widget-card" style="padding: 2.5rem; display: flex; flex-direction: column; gap: 2.5rem;">
@@ -548,21 +541,21 @@
 
     <!-- Bulk Log Modal -->
     <div id="bulk-log-modal" class="modal-container hidden">
-        <div class="modal-box" style="max-width: 700px; width: 90%;">
+        <div class="modal-box" style="max-width: 800px; width: 95%;">
             <button id="close-bulk-log-modal" class="close-btn" title="Close">✕</button>
-            <h2 style="margin-bottom:0.5rem; font-size:1.6rem;">Bulk Log Movies</h2>
+            <h2 id="bulk-log-title" style="margin-bottom:0.5rem; font-size:1.6rem;">Bulk Log Movies</h2>
             
             <div id="bulk-step-1">
-                <p style="color:var(--text-secondary); margin-bottom:1rem; font-size:0.95rem;">Paste a list of movie titles (one per line). The engine will find the closest matches on TMDB.</p>
-                <textarea id="bulk-list-input" class="glass-input" rows="10" placeholder="The Matrix\nInception\nSpiderman 2..."></textarea>
+                <p id="bulk-log-desc" style="color:var(--text-secondary); margin-bottom:1rem; font-size:0.95rem;">Enter a comma-separated list of movie titles. The engine will find the closest matches on TMDB.</p>
+                <textarea id="bulk-list-input" class="glass-input" rows="10" placeholder="The Matrix, Inception, Spiderman 2..." style="width: 100%; box-sizing: border-box;"></textarea>
                 <div style="display:flex; justify-content:flex-end; margin-top:1rem;">
                     <button id="bulk-fetch-btn" class="primary-btn">Fetch Matches</button>
                 </div>
             </div>
 
             <div id="bulk-step-2" class="hidden">
-                <p style="color:var(--text-secondary); margin-bottom:1rem; font-size:0.95rem;">Verify the matched movies and enter your rating (0-10).</p>
-                <div id="bulk-match-grid" style="max-height: 400px; overflow-y: auto; padding-right: 0.5rem;"></div>
+                <p style="color:var(--text-secondary); margin-bottom:1rem; font-size:0.95rem;">Verify the matches and enter your rating (0-10) for the correct one.</p>
+                <div id="bulk-match-grid" style="display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; max-height: 400px; overflow-y: auto; padding-right: 0.5rem;"></div>
                 <div style="display:flex; justify-content:space-between; margin-top:1.5rem;">
                     <button id="bulk-back-btn" class="secondary-btn">Back</button>
                     <button id="bulk-save-btn" class="primary-btn">Save All Ratings</button>
