@@ -108,20 +108,36 @@ function getClusterRepresentatives(clusterItems, count = 3) {
         if (i !== medoidIdx) available.push(clusterItems[i]);
     }
     
-    // Fisher-Yates shuffle
-    for(let i = available.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [available[i], available[j]] = [available[j], available[i]];
-    }
-    
-    for(let i=0; i < Math.min(count - 1, available.length); i++) {
-        reps.push(available[i]);
+    if (available.length > 0) {
+        // Sort remaining by user_rating descending
+        available.sort((a, b) => b.user_rating - a.user_rating);
+        
+        // Grab highest rated
+        reps.push(available[0]);
+        
+        // If we still need more and have more available, grab lowest rated (which is at the end of the sorted array)
+        if (reps.length < count && available.length > 1) {
+            reps.push(available[available.length - 1]);
+        }
+        
+        // If we still need more (count > 3), fill with random from the middle
+        if (reps.length < count && available.length > 2) {
+            const middle = available.slice(1, available.length - 1);
+            for(let i = middle.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [middle[i], middle[j]] = [middle[j], middle[i]];
+            }
+            let idx = 0;
+            while(reps.length < count && idx < middle.length) {
+                reps.push(middle[idx++]);
+            }
+        }
     }
     
     return reps;
 }
 
-function extractCorePlots(allWatched, isAnime) {
+function extractCorePlots(allWatched, isAnime, targetK = null) {
     const descCol = isAnime ? 'description' : 'overview';
     
     const prepareItems = (thresholdFn) => {
@@ -148,7 +164,7 @@ function extractCorePlots(allWatched, isAnime) {
         if (items.length < 3) return { medoids: items.map(i => i.desc), outliers: [], rawClusters: [], rawOutliers: [] };
         
         // Single K-Means call — dynamically selects best k to balance clusters and detect outliers
-        const res = optimalKMeans(items);
+        const res = optimalKMeans(items, targetK);
 
         const medoids = res.clusters.flatMap(c => getClusterRepresentatives(c)).map(m => m.desc);
         
@@ -258,7 +274,7 @@ async function formatClusters(clusters, isAnime, totalVectors) {
     return formattedClusters;
 }
 
-async function generateTasteSummary() {
+async function generateTasteSummary(movieTargetK = null, animeTargetK = null) {
     let summary = "";
     let combinedTasteData = {
         lovedGenres: [],
@@ -267,7 +283,7 @@ async function generateTasteSummary() {
         hatedTags: []
     };
     
-    const processDomain = async (dbConn, isAnime, title) => {
+    const processDomain = async (dbConn, isAnime, title, targetK) => {
         let domainSummary = `=== THEIR ${title} TASTE ===\n\n`;
         let tasteFormat = null;
         try {
@@ -286,7 +302,7 @@ async function generateTasteSummary() {
             const notes = allWatched.map(m => m.notes).filter(n => n);
             
             // Extract medoids via K-Means
-            const { likedPlots, dislikedPlots, outlierText, likedClusters } = extractCorePlots(allWatched, isAnime);
+            const { likedPlots, dislikedPlots, outlierText, likedClusters } = extractCorePlots(allWatched, isAnime, targetK);
             
             // Generate Narrative via Gemini
             let narrative = { likedSentence: "Stories that align with their aesthetic.", dislikedSentence: "Stories that clash with their preferences." };
@@ -329,7 +345,7 @@ async function generateTasteSummary() {
         return { domainSummary, tasteFormat };
     };
 
-    const movieResult = await processDomain(db, false, "MOVIE");
+    const movieResult = await processDomain(db, false, "MOVIE", movieTargetK);
     summary += movieResult.domainSummary;
     if (movieResult.tasteFormat) {
         combinedTasteData.lovedGenres.push(...movieResult.tasteFormat.lovedGenres);
@@ -338,7 +354,7 @@ async function generateTasteSummary() {
         combinedTasteData.hatedTags.push(...movieResult.tasteFormat.hatedTags);
     }
 
-    const animeResult = await processDomain(animeDb, true, "ANIME");
+    const animeResult = await processDomain(animeDb, true, "ANIME", animeTargetK);
     summary += animeResult.domainSummary;
     if (animeResult.tasteFormat) {
         combinedTasteData.lovedGenres.push(...animeResult.tasteFormat.lovedGenres);
@@ -380,8 +396,8 @@ function getMedoidSeedIds(dbConnection, isAnime) {
     
     if (medoids.length === 0) return items.sort((a,b) => b.user_rating - a.user_rating).slice(0, 10).map(i => i.id);
     
-    const outliers = res.outliers.slice(0, 2).map(m => m.id);
-    return [...medoids, ...outliers];
+    const outlierSeeds = getClusterRepresentatives(res.outliers, 3).map(m => m.id);
+    return [...medoids, ...outlierSeeds];
 }
 
 module.exports = { generateTasteSummary, getMedoidSeedIds };

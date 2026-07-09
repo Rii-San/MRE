@@ -1676,6 +1676,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await res.json();
                 
                 // Profile is cached
+                if (data.movieMinCluster) {
+                    const input = document.getElementById('input-min-cluster-movie');
+                    if (input) input.value = data.movieMinCluster;
+                }
+                if (data.animeMinCluster) {
+                    const input = document.getElementById('input-min-cluster-anime');
+                    if (input) input.value = data.animeMinCluster;
+                }
                 
                 if (data.tasteSummary) {
                     renderDeepInsights(data.tasteSummary);
@@ -1927,8 +1935,10 @@ document.addEventListener('DOMContentLoaded', () => {
             btnGenerateReading.textContent = "✨ Computing Profile...";
             btnGenerateReading.disabled = true;
             
-            const movieMinCluster = document.getElementById('input-min-cluster-movie')?.value || 3;
-            const animeMinCluster = document.getElementById('input-min-cluster-anime')?.value || 3;
+            const movieVal = document.getElementById('input-min-cluster-movie')?.value;
+            const animeVal = document.getElementById('input-min-cluster-anime')?.value;
+            const movieMinCluster = movieVal ? parseInt(movieVal) : null;
+            const animeMinCluster = animeVal ? parseInt(animeVal) : null;
             
             try {
                 const res = await fetch('/api/deep_insights/generate', { 

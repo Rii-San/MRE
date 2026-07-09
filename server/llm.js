@@ -23,7 +23,8 @@ async function initModel() {
         const { getLlama } = await import("node-llama-cpp");
         llama = await getLlama();
         model = await llama.loadModel({ 
-            modelPath
+            modelPath,
+            gpuLayers: "max"
         });
         context = await model.createEmbeddingContext({
             contextSize: 2048

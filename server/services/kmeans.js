@@ -127,12 +127,36 @@ function kMeansWithOutliers(items, k, maxIter = 100) {
 }
 
 /**
- * Automatically evaluates K = 3, 4, 5 and selects the most balanced clustering.
+ * Evaluates K = 3, 4, 5 and selects the most balanced clustering, 
+ * OR uses targetK if provided.
  * @param {Array} items 
+ * @param {number} targetK 
  * @returns { clusters, outliers }
  */
-function optimalKMeans(items) {
+function optimalKMeans(items, targetK = null) {
     if (items.length < 3) return { clusters: [], outliers: items };
+    
+    // If user specified a target cluster size, use it directly (compute once)
+    if (targetK && targetK >= 2) {
+        // Run a few initializations and pick the best to avoid bad random seeds
+        let bestClusters = [];
+        let bestOutliers = items;
+        let minDiff = Infinity;
+        for (let tries = 0; tries < 5; tries++) {
+            const { clusters, outliers } = kMeansWithOutliers(items, targetK);
+            if (clusters.length < 2) continue;
+            
+            const sizes = clusters.map(c => c.length);
+            const diff = (Math.max(...sizes) - Math.min(...sizes)) + (outliers.length * 1.5);
+            if (diff < minDiff) {
+                minDiff = diff;
+                bestClusters = clusters;
+                bestOutliers = outliers;
+            }
+        }
+        return { clusters: bestClusters.length > 0 ? bestClusters : [items], outliers: bestOutliers };
+    }
+
     if (items.length <= 15) return kMeansWithOutliers(items, 2); // For very small datasets, just do K=2
 
     let bestClusters = [];

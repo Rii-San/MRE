@@ -19,8 +19,13 @@ function saveUserProfile(profile) {
 
 router.post('/generate', express.json(), async (req, res) => {
     try {
+        const { movieMinCluster, animeMinCluster } = req.body || {};
         const profile = getUserProfile();
-        const result = await generateTasteSummary();
+        
+        const result = await generateTasteSummary(
+            movieMinCluster ? parseInt(movieMinCluster) : null,
+            animeMinCluster ? parseInt(animeMinCluster) : null
+        );
         
         const summary = result.summary;
         const tasteData = result.tasteData;
@@ -49,6 +54,10 @@ router.post('/generate', express.json(), async (req, res) => {
         profile.tasteSummary = summary;
         profile.bias = bias;
         if (narrative_embedding) profile.narrative_embedding = narrative_embedding;
+        
+        // Save user cluster size preferences
+        if (movieMinCluster) profile.movieMinCluster = movieMinCluster;
+        if (animeMinCluster) profile.animeMinCluster = animeMinCluster;
         
         profile.tasteSummary = result.summary;
         profile.tasteData = result.tasteData;

@@ -321,6 +321,15 @@
                 <div id="insight-tab-oracle" class="insight-tab-content oracle-den" style="display: none;">
                     <div style="text-align: center; margin: 1rem 0 2rem 0; display: flex; justify-content: center; align-items: center; gap: 1rem;">
                         <button id="btn-generate-reading" class="primary-btn" style="padding: 0.85rem 2.5rem; font-size: 1.15rem; border-radius: 30px; letter-spacing: 0.5px;">✨ Compute Taste Profile</button>
+                        
+                        <div id="cluster-config-movie" style="display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem;">
+                            <label style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Number of Clusters</label>
+                            <input type="number" id="input-min-cluster-movie" placeholder="Auto" step="1" min="2" max="10" class="glass-input" style="width: 80px; padding: 0.4rem; font-size: 0.9rem;" title="Leave empty for auto (3-5)">
+                        </div>
+                        <div id="cluster-config-anime" style="display: none; flex-direction: column; align-items: flex-start; gap: 0.2rem;">
+                            <label style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Number of Clusters</label>
+                            <input type="number" id="input-min-cluster-anime" placeholder="Auto" step="1" min="2" max="10" class="glass-input" style="width: 80px; padding: 0.4rem; font-size: 0.9rem;" title="Leave empty for auto (3-5)">
+                        </div>
 
                     </div>
 

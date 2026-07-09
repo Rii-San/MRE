@@ -19,7 +19,10 @@ async function checkAndRecomputeClusters() {
             // Wait, we need to import setCachedTasteSummary and update the cache. Let's do that.
             const { setCachedTasteSummary } = require('../engine/cache');
             
-            const result = await generateTasteSummary();
+            const result = await generateTasteSummary(
+                profile.movieMinCluster ? parseInt(profile.movieMinCluster) : null,
+                profile.animeMinCluster ? parseInt(profile.animeMinCluster) : null
+            );
             
             if (result && result.summary && !result.summary.includes('Not enough data')) {
                 setCachedTasteSummary(result.summary);
