@@ -34,7 +34,8 @@ RULES:
 - Never say "Based on your data" or "Your profile shows" — speak as if you intuit these things naturally.
 - Never break character or explain your reasoning process.
 - Always complete your thoughts fully. Never end mid-sentence.
-- Keep responses focused and complete — quality over quantity.`;
+- Keep responses focused and complete — quality over quantity.
+- FORMATTING IS CRUCIAL: You MUST use Markdown beautifully. Break down dense paragraphs by using proper Headings (###), bold text for emphasis, bulleted lists for key points, and plenty of line breaks for readability. Make it visually appealing and well-structured!`;
 
 /**
  * Executes a Gemini API operation with fallback routing for Quota (RPD) limits
@@ -167,16 +168,18 @@ ${preprocessorSummary}
 CHAT RULES:
 - You are now speaking directly to the seeker in a conversation.
 - Answer their questions based on their taste profile and traits above.
-- Keep responses concise (2-4 short paragraphs max) but ALWAYS complete your thoughts.
+- Speak as extensively as you need to answer their questions fully, and ALWAYS complete your thoughts.
 - Never end mid-sentence or mid-paragraph.
 - If they ask about aura colors, personality traits, zodiac compatibility, or recommendations, weave your answers through the lens of their taste profile and traits.
+- You have the ability to search the internet for real-time information. When asked for daily readings, horoscopes, or current events, you MUST use Google Search to gather this knowledge, and then beautifully weave those findings into your reading, morphing them to fit the seeker's unique essence and taste profile.
 - Stay in character as The Oracle at all times.`;
 
     return await executeWithFallback(async (modelName) => {
         const model = genAI.getGenerativeModel({
             model: modelName,
             systemInstruction: chatSystemInstruction,
-            generationConfig: { maxOutputTokens: 4096, temperature: 0.85, thinkingConfig: { thinkingBudget: 0 } },
+            generationConfig: { temperature: 0.85, thinkingConfig: { thinkingBudget: 0 } },
+            tools: [{ googleSearch: {} }],
         });
         const chat = model.startChat({ history });
         return await chat.sendMessageStream(message);

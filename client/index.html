@@ -70,15 +70,24 @@
 
             <!-- View: Chat -->
             <section id="view-chat" class="view-section">
-                <header class="section-header">
-                    <h2>Mystical Assistant</h2>
+                <header class="section-header" style="display: flex; align-items: center; justify-content: flex-start; gap: 1rem;">
+                    <button id="toggle-chat-sidebar" class="secondary-btn" style="padding: 0.4rem 0.6rem; border-radius: 8px; font-size: 1.2rem; line-height: 1;" title="Toggle History">☰</button>
+                    <h2 style="margin: 0;">Mystical Assistant</h2>
                 </header>
-                <div class="oracle-chat-container">
-                    <div id="oracle-chat-history" class="chat-history"></div>
-                    <form id="chat-form" class="chat-input-area" style="display: flex; gap: 0.5rem; margin-top: 1rem;">
-                        <input type="text" id="oracle-chat-input" placeholder="Ask the Oracle a question..." class="glass-input" style="flex: 1;" autocomplete="off" required>
-                        <button type="submit" id="btn-send-chat" class="btn-oracle" style="padding: 0.5rem 1.5rem; font-size: 1rem;">Send</button>
-                    </form>
+                <div class="chat-layout" style="display: flex; gap: 1.5rem; height: calc(100vh - 180px); transition: gap 0.3s cubic-bezier(0.4, 0, 0.2, 1);">
+                    <aside class="chat-sidebar glass-panel" style="width: 260px; padding: 1rem; display: flex; flex-direction: column; overflow: hidden; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;">
+                        <button id="new-chat-btn" class="primary-btn" style="width: 100%; margin-bottom: 1rem; padding: 0.75rem; border-radius: 8px;">✨ New Chat</button>
+                        <div id="chat-session-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; padding-right: 0.25rem;">
+                            <!-- Chat sessions injected here -->
+                        </div>
+                    </aside>
+                    <div class="oracle-chat-container" style="flex: 1; display: flex; flex-direction: column; height: 100%; margin-top: 0; padding-top: 0; border-top: none;">
+                        <div id="oracle-chat-history" class="chat-history" style="flex: 1; max-height: none; overflow-y: auto; padding-right: 1rem;"></div>
+                        <form id="chat-form" class="chat-input-area" style="display: flex; gap: 0.5rem; margin-top: 1rem; align-items: flex-end;">
+                            <textarea id="oracle-chat-input" placeholder="Ask the Oracle a question..." class="glass-input" style="flex: 1; resize: none; max-height: 150px; overflow-y: auto; box-sizing: border-box; font-family: inherit;" rows="1" required></textarea>
+                            <button type="submit" id="btn-send-chat" class="btn-oracle" style="padding: 0.5rem 1.5rem; font-size: 1rem; height: 44px;">Send</button>
+                        </form>
+                    </div>
                 </div>
             </section>
 
