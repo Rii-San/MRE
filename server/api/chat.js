@@ -10,7 +10,7 @@ const chatDb = require('../db/chatDb');
 // Get all sessions
 router.get('/sessions', (req, res) => {
     try {
-        const sessions = chatDb.prepare('SELECT * FROM chat_sessions ORDER BY updated_at DESC').all();
+        const sessions = chatDb.prepare('SELECT * FROM chat_sessions ORDER BY created_at DESC').all();
         res.json(sessions);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -44,6 +44,19 @@ router.get('/sessions/:id/messages', (req, res) => {
 router.delete('/sessions/:id', (req, res) => {
     try {
         chatDb.prepare('DELETE FROM chat_sessions WHERE id = ?').run(req.params.id);
+        res.json({ success: true });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+// Update a session title
+router.put('/sessions/:id', (req, res) => {
+    try {
+        const { title } = req.body;
+        if (!title) {
+            return res.status(400).json({ error: 'Title is required' });
+        }
+        chatDb.prepare('UPDATE chat_sessions SET title = ? WHERE id = ?').run(title, req.params.id);
         res.json({ success: true });
     } catch (e) {
         res.status(500).json({ error: e.message });

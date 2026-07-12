@@ -43,20 +43,77 @@ document.addEventListener('DOMContentLoaded', () => {
             const sessions = await res.json();
             
             sessionList.innerHTML = '';
+            let currentGroup = null;
+
             sessions.forEach(session => {
+                const date = new Date(session.created_at + 'Z'); // ensure UTC parsing if missing Z
+                const monthYear = date.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+                if (currentGroup !== monthYear) {
+                    currentGroup = monthYear;
+                    const header = document.createElement('div');
+                    header.className = 'chat-session-group-header';
+                    header.textContent = currentGroup;
+                    header.style.cssText = 'font-size: 0.75rem; color: var(--text-secondary); padding: 1rem 0.5rem 0.25rem 0.5rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; margin-top: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 0.5rem;';
+                    if (sessionList.children.length === 0) header.style.marginTop = '0';
+                    sessionList.appendChild(header);
+                }
+
                 const item = document.createElement('div');
                 item.className = `chat-session-item ${session.id === currentSessionId ? 'active' : ''}`;
                 item.innerHTML = `
                     <div class="chat-session-title" title="${session.title}">${session.title}</div>
-                    <button class="chat-session-delete" data-id="${session.id}">×</button>
+                    <input type="text" class="chat-session-title-input" value="${session.title}" />
+                    <div class="chat-session-actions">
+                        <button class="chat-session-action-btn edit-btn" title="Rename">✎</button>
+                        <button class="chat-session-action-btn delete-btn" title="Delete">×</button>
+                    </div>
                 `;
                 
+                const titleDiv = item.querySelector('.chat-session-title');
+                const titleInput = item.querySelector('.chat-session-title-input');
+                const editBtn = item.querySelector('.edit-btn');
+                const deleteBtn = item.querySelector('.delete-btn');
+
                 item.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('chat-session-delete')) return;
+                    if (item.classList.contains('editing') || e.target.closest('.chat-session-actions')) return;
                     loadSessionMessages(session.id);
                 });
 
-                item.querySelector('.chat-session-delete').addEventListener('click', async (e) => {
+                editBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    item.classList.add('editing');
+                    titleInput.focus();
+                });
+
+                async function saveTitle() {
+                    const newTitle = titleInput.value.trim();
+                    item.classList.remove('editing');
+                    if (newTitle && newTitle !== session.title) {
+                        titleDiv.textContent = newTitle;
+                        session.title = newTitle;
+                        await fetch(apiUrl(`chat/sessions/${session.id}`), {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ title: newTitle })
+                        });
+                    } else {
+                        titleInput.value = session.title;
+                    }
+                }
+
+                titleInput.addEventListener('blur', saveTitle);
+                titleInput.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        titleInput.blur();
+                    } else if (e.key === 'Escape') {
+                        titleInput.value = session.title;
+                        titleInput.blur();
+                    }
+                });
+
+                deleteBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     if (confirm("Delete this chat?")) {
                         await fetch(apiUrl(`chat/sessions/${session.id}`), { method: 'DELETE' });
